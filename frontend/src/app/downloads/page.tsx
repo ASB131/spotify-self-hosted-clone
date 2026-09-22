@@ -61,7 +61,7 @@ export default function DownloadsPage() {
       <div className="flex items-center justify-between gap-4 mb-2">
         <h1 className="text-2xl font-bold">Downloads</h1>
         <span className={`text-xs ${live ? "text-spotify" : "text-muted"}`}>
-          {live ? "Live updates on" : "Polling every 4s"}
+          {live ? "Live updates connected" : "Reconnecting… (still polling every 4s)"}
         </span>
       </div>
       <p className="text-sm text-muted mb-6 max-w-2xl">

@@ -39,8 +39,24 @@ def extract_youtube_id(url: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _writable_cookiefile() -> Optional[str]:
+    """
+    yt-dlp may update cookies on disk. Docker mounts cookies.txt :ro, so copy to /tmp.
+    """
+    src = Path(settings.ytdlp_cookies_path)
+    if not src.is_file() or src.stat().st_size < 40:
+        logger.warning("cookies.txt missing or empty at %s — YouTube may block downloads", src)
+        return None
+    dest = Path(tempfile.gettempdir()) / "ytdlp_cookies.txt"
+    try:
+        shutil.copy2(src, dest)
+        return str(dest)
+    except OSError as exc:
+        logger.warning("Could not copy cookies to writable path: %s", exc)
+        return None
+
+
 def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
-    cookies = settings.ytdlp_cookies_path
     opts: dict = {
         "outtmpl": outtmpl,
         "quiet": True,
@@ -52,10 +68,11 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
         "writethumbnail": True,
         "embedthumbnail": False,
     }
-    if Path(cookies).is_file():
-        opts["cookiefile"] = cookies
+    cookiefile = _writable_cookiefile()
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
     else:
-        logger.warning("cookies.txt not found at %s — YouTube may rate-limit", cookies)
+        logger.warning("Proceeding without cookies — downloads may fail")
 
     if audio_format == "flac":
         opts["format"] = "bestaudio/best"

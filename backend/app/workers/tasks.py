@@ -338,10 +338,11 @@ def sync_spotify_for_user(user_id: int):
         db.close()
 
 
-def _ytdlp_cookie_path() -> str:
-    from app.config import get_settings
+def _ytdlp_cookie_path() -> str | None:
+    """Writable cookie copy for yt-dlp (source mount is often read-only)."""
+    from app.workers.download_util import _writable_cookiefile
 
-    return get_settings().ytdlp_cookies_path
+    return _writable_cookiefile()
 
 
 def _search_youtube_for_query(query: str) -> str | None:
@@ -350,7 +351,7 @@ def _search_youtube_for_query(query: str) -> str | None:
 
     opts = {"quiet": True, "extract_flat": True, "skip_download": True}
     cookies = _ytdlp_cookie_path()
-    if Path(cookies).is_file():
+    if cookies:
         opts["cookiefile"] = cookies
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
