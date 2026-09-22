@@ -75,14 +75,32 @@ def _stream_file_range(path: Path, start: int, end: int, content_type: str) -> S
 
 
 def _client_supports_flac(accept: Optional[str], user_agent: Optional[str]) -> bool:
-    """Chrome/Edge/Firefox play FLAC natively; prefer that over on-the-fly transcode."""
+    """Chrome/Edge/Firefox/Android play FLAC natively; Safari needs ffmpeg→mp3.
+
+    HTMLAudioElement usually sends Accept: */*, so User-Agent is the real signal.
+    When UA is missing (proxy forgot to forward it), prefer native FLAC — a length-less
+    MP3 pipe makes the player show 0:00 duration.
+    """
     ua = (user_agent or "").lower()
-    if any(x in ua for x in ("chrome", "chromium", "edg/", "firefox", "crios")):
-        return True
-    if not accept:
+    # Chrome/CriOS/Android also include "safari" in the UA string.
+    is_safari = (
+        "safari" in ua
+        and "chrome" not in ua
+        and "chromium" not in ua
+        and "crios" not in ua
+        and "firefox" not in ua
+        and "edg/" not in ua
+        and "android" not in ua
+    )
+    if is_safari:
         return False
-    a = accept.lower()
-    return "audio/flac" in a or "audio/x-flac" in a
+    if any(x in ua for x in ("chrome", "chromium", "edg/", "firefox", "crios", "android")):
+        return True
+    if accept:
+        a = accept.lower()
+        if "audio/flac" in a or "audio/x-flac" in a:
+            return True
+    return not ua
 
 
 def _transcode_flac_to_mp3_stream(path: Path) -> StreamingResponse:

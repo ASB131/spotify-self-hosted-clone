@@ -2,23 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 
 const backend = () => process.env.INTERNAL_API_URL || "http://127.0.0.1:8000";
 
+/** Headers the browser sends that the API needs (esp. stream Range + FLAC UA detect). */
+const FORWARD_REQUEST_HEADERS = [
+  "cookie",
+  "authorization",
+  "content-type",
+  "accept",
+  "range",
+  "user-agent",
+  "if-range",
+  "if-none-match",
+  "if-modified-since",
+] as const;
+
 async function proxy(req: NextRequest, segments: string[]) {
   const path = segments.join("/");
   const target = `${backend()}/api/v1/${path}${req.nextUrl.search}`;
   const headers = new Headers();
-  const cookie = req.headers.get("cookie");
-  if (cookie) headers.set("cookie", cookie);
-  const auth = req.headers.get("authorization");
-  if (auth) headers.set("authorization", auth);
-  const contentType = req.headers.get("content-type");
-  if (contentType) headers.set("content-type", contentType);
-  const accept = req.headers.get("accept");
-  if (accept) headers.set("accept", accept);
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = req.headers.get(name);
+    if (value) headers.set(name, value);
+  }
 
   const init: RequestInit = {
     method: req.method,
     headers,
     redirect: "manual",
+    // Required so Range / streaming bodies are not buffered oddly by undici.
+    cache: "no-store",
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
     init.body = await req.arrayBuffer();
@@ -41,6 +52,10 @@ async function proxy(req: NextRequest, segments: string[]) {
 }
 
 export async function GET(req: NextRequest, ctx: { params: { path: string[] } }) {
+  return proxy(req, ctx.params.path);
+}
+
+export async function HEAD(req: NextRequest, ctx: { params: { path: string[] } }) {
   return proxy(req, ctx.params.path);
 }
 

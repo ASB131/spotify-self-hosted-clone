@@ -746,6 +746,11 @@ def redownload_track_format(user_id: int, track_id: int, target_format: str, job
         track.relative_path = relative
         track.format = fmt
         track.file_size_bytes = size
+        if meta.get("duration") is not None:
+            try:
+                track.duration_seconds = int(meta["duration"])
+            except (TypeError, ValueError):
+                pass
         if art_rel:
             track.art_relative_path = art_rel
         db.add(track)

@@ -100,6 +100,11 @@ function resolveNextIndex(
 
 let crossfadeArmed = false;
 
+function catalogDuration(track: Track | null | undefined): number {
+  const d = track?.duration_seconds;
+  return d != null && Number.isFinite(d) && d > 0 ? d : 0;
+}
+
 function loadTrack(track: Track | null, opts?: { autoplay?: boolean; seek?: number; volume?: number }) {
   loadOnActive(track, opts);
 }
@@ -194,6 +199,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueIndex: idx,
       current: track,
       progress: saved.progress || 0,
+      duration: catalogDuration(track),
       volume: saved.volume ?? 0.8,
       shuffle: !!saved.shuffle,
       repeat: saved.repeat || "off",
@@ -236,6 +242,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueIndex: idx,
       current: track,
       progress: 0,
+      duration: catalogDuration(track),
       isPlaying: true,
       sourcePlaylistId: pl ?? null,
     });
@@ -330,7 +337,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (index < 0 || index >= queue.length) return;
     crossfadeArmed = false;
     const track = queue[index];
-    set({ current: track, queueIndex: index, progress: 0, isPlaying: true });
+    set({
+      current: track,
+      queueIndex: index,
+      progress: 0,
+      duration: catalogDuration(track),
+      isPlaying: true,
+    });
     loadTrack(track, { autoplay: true, volume: get().volume });
     recordPlay(track.id, sourcePlaylistId);
     get().persist();
@@ -357,16 +370,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     crossfadeArmed = false;
     if (!track) {
       pauseAll();
-      set({ current: null, isPlaying: false, progress: 0 });
+      set({ current: null, isPlaying: false, progress: 0, duration: 0 });
       get().persist();
       return;
     }
     const { queue, sourcePlaylistId } = get();
     const idx = queue.findIndex((t) => t.id === track.id);
+    const dur = catalogDuration(track);
     if (idx >= 0) {
-      set({ current: track, queueIndex: idx, progress: 0, isPlaying: true });
+      set({ current: track, queueIndex: idx, progress: 0, duration: dur, isPlaying: true });
     } else {
-      set({ current: track, queue: [track], queueIndex: 0, progress: 0, isPlaying: true });
+      set({
+        current: track,
+        queue: [track],
+        queueIndex: 0,
+        progress: 0,
+        duration: dur,
+        isPlaying: true,
+      });
     }
     loadTrack(track, { autoplay: true, volume: get().volume });
     recordPlay(track.id, sourcePlaylistId);
@@ -396,7 +417,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (nextIdx == null) return;
     const track = queue[nextIdx];
     crossfadeArmed = false;
-    set({ current: track, queueIndex: nextIdx, progress: 0, isPlaying: true });
+    set({
+      current: track,
+      queueIndex: nextIdx,
+      progress: 0,
+      duration: catalogDuration(track),
+      isPlaying: true,
+    });
 
     if (opts?.fromCrossfade && crossfadeSeconds > 0) {
       crossfadeToIdle(track, volume, () => {
@@ -426,7 +453,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     crossfadeArmed = false;
     const prevIdx = queueIndex <= 0 ? queue.length - 1 : queueIndex - 1;
     const track = queue[prevIdx];
-    set({ current: track, queueIndex: prevIdx, progress: 0, isPlaying: true });
+    set({
+      current: track,
+      queueIndex: prevIdx,
+      progress: 0,
+      duration: catalogDuration(track),
+      isPlaying: true,
+    });
     loadTrack(track, { autoplay: true, volume });
     recordPlay(track.id, sourcePlaylistId);
     get().persist();
@@ -452,7 +485,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setProgress: (p) => set({ progress: p }),
-  setDuration: (d) => set({ duration: d }),
+  setDuration: (d) => {
+    if (Number.isFinite(d) && d > 0) {
+      set({ duration: d });
+      return;
+    }
+    const fallback = catalogDuration(get().current);
+    set({ duration: fallback });
+  },
 
   seek: (seconds) => {
     const audio = get().audioRef || getSharedAudio();
@@ -466,9 +506,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   tickCrossfade: (currentTime, duration) => {
     const { crossfadeSeconds, isPlaying, repeat, queue, queueIndex, shuffle } = get();
-    if (!isPlaying || !duration || crossfadeSeconds <= 0 || repeat === "one") return;
+    const dur = Number.isFinite(duration) && duration > 0 ? duration : catalogDuration(get().current);
+    if (!isPlaying || !dur || crossfadeSeconds <= 0 || repeat === "one") return;
     if (crossfadeArmed) return;
-    const remaining = duration - currentTime;
+    const remaining = dur - currentTime;
     if (remaining > crossfadeSeconds + 0.15) return;
     const nextIdx = resolveNextIndex(queue, queueIndex, shuffle, repeat);
     if (nextIdx == null) return;

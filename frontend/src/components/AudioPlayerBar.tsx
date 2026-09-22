@@ -13,6 +13,14 @@ function fmt(sec: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** FLAC / piped streams often expose Infinity or NaN for audio.duration. */
+function resolveDuration(el: HTMLAudioElement, trackSeconds?: number | null): number {
+  const fromEl = el.duration;
+  if (Number.isFinite(fromEl) && fromEl > 0) return fromEl;
+  if (trackSeconds != null && Number.isFinite(trackSeconds) && trackSeconds > 0) return trackSeconds;
+  return 0;
+}
+
 export function AudioPlayerBar() {
   const {
     current,
@@ -50,16 +58,18 @@ export function AudioPlayerBar() {
     hydrate();
 
     const attach = (el: HTMLAudioElement) => {
+      const applyDuration = () => {
+        if (el !== getSharedAudio()) return;
+        const trackSec = usePlayerStore.getState().current?.duration_seconds;
+        setDuration(resolveDuration(el, trackSec));
+      };
       const onTime = () => {
         if (el !== getSharedAudio()) return;
         setProgress(el.currentTime);
-        tickCrossfade(el.currentTime, el.duration || 0);
+        const trackSec = usePlayerStore.getState().current?.duration_seconds;
+        tickCrossfade(el.currentTime, resolveDuration(el, trackSec));
         if (persistTimer.current) clearTimeout(persistTimer.current);
         persistTimer.current = setTimeout(() => persist(), 1500);
-      };
-      const onMeta = () => {
-        if (el !== getSharedAudio()) return;
-        setDuration(el.duration || 0);
       };
       const onEnd = () => {
         if (el !== getSharedAudio()) return;
@@ -74,13 +84,15 @@ export function AudioPlayerBar() {
         usePlayerStore.setState({ isPlaying: false });
       };
       el.addEventListener("timeupdate", onTime);
-      el.addEventListener("loadedmetadata", onMeta);
+      el.addEventListener("loadedmetadata", applyDuration);
+      el.addEventListener("durationchange", applyDuration);
       el.addEventListener("ended", onEnd);
       el.addEventListener("play", onPlay);
       el.addEventListener("pause", onPause);
       return () => {
         el.removeEventListener("timeupdate", onTime);
-        el.removeEventListener("loadedmetadata", onMeta);
+        el.removeEventListener("loadedmetadata", applyDuration);
+        el.removeEventListener("durationchange", applyDuration);
         el.removeEventListener("ended", onEnd);
         el.removeEventListener("play", onPlay);
         el.removeEventListener("pause", onPause);
@@ -113,6 +125,20 @@ export function AudioPlayerBar() {
     };
   }, [bindAudio, hydrate, persist, setDuration, setProgress, onEnded, tickCrossfade]);
 
+  // Seed bar duration from catalog immediately (FLAC streams often report Infinity).
+  useEffect(() => {
+    if (!current) {
+      setDuration(0);
+      return;
+    }
+    const catalog = current.duration_seconds;
+    if (catalog == null || !Number.isFinite(catalog) || catalog <= 0) return;
+    const el = getSharedAudio();
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) {
+      setDuration(catalog);
+    }
+  }, [current?.id, current?.duration_seconds, setDuration]);
+
   if (!current) {
     return (
       <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0 player-bar pb-[env(safe-area-inset-bottom)]">
@@ -121,8 +147,14 @@ export function AudioPlayerBar() {
     );
   }
 
+  const barDuration =
+    Number.isFinite(duration) && duration > 0
+      ? duration
+      : current.duration_seconds && current.duration_seconds > 0
+        ? current.duration_seconds
+        : 0;
+  const pct = barDuration > 0 ? Math.min(100, (progress / barDuration) * 100) : 0;
   const cover = artUrl(current);
-  const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (
     <footer className="min-h-[72px] md:h-[90px] rounded-lg bg-panel px-2 sm:px-3 py-2 grid grid-cols-[1fr_auto] md:grid-cols-[1fr_minmax(240px,40%)_1fr] items-center gap-2 md:gap-3 shrink-0 player-bar pb-[max(0.5rem,env(safe-area-inset-bottom))]">
@@ -188,7 +220,7 @@ export function AudioPlayerBar() {
             <input
               type="range"
               min={0}
-              max={duration || 0}
+              max={barDuration || 0}
               step={0.1}
               value={progress}
               onChange={(e) => seek(Number(e.target.value))}
@@ -196,7 +228,7 @@ export function AudioPlayerBar() {
               aria-label="Seek"
             />
           </div>
-          <span className="w-8 sm:w-10">{fmt(duration)}</span>
+          <span className="w-8 sm:w-10">{fmt(barDuration)}</span>
         </div>
       </div>
 
