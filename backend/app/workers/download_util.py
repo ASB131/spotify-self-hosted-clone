@@ -80,23 +80,20 @@ def _writable_cookiefile() -> Optional[str]:
 
 def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
     """
-    Flexible format selection + alternate YouTube clients to avoid
-    "Requested format is not available" without requiring cookies.
+    Keep format selection simple; rely on a current yt-dlp + Node.js for YouTube JS.
     """
     codec = "flac" if audio_format == "flac" else "mp3"
     opts: dict = {
         "outtmpl": outtmpl,
         "quiet": True,
-        "no_warnings": True,
+        "no_warnings": False,
         "noplaylist": True,
         "retries": 5,
         "fragment_retries": 5,
         "ignoreerrors": False,
         "writethumbnail": True,
         "embedthumbnail": False,
-        # Prefer any audio; fall back to muxed best and let FFmpeg extract
-        "format": "bestaudio/bestvideo+bestaudio/best",
-        "merge_output_format": "mkv",
+        "format": "bestaudio/best",
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -104,10 +101,10 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
                 "preferredquality": "0",
             }
         ],
-        # Android/iOS clients expose formats when web client is empty/blocked
+        # Prefer clients that still return downloadable URLs without SABR-only web
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "web"],
+                "player_client": ["android", "ios", "tv", "web"],
             }
         },
     }
@@ -116,7 +113,7 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
         opts["cookiefile"] = cookiefile
         logger.info("Using YouTube cookies from uploaded/mounted file")
     else:
-        logger.info("No cookies configured — using mobile YouTube clients")
+        logger.info("No cookies configured — using yt-dlp default clients")
 
     return opts
 
