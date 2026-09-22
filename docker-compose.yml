@@ -72,6 +72,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-musicapp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-musicapp}
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      REDIS_URL: redis://redis:6379/0
       MUSIC_ROOT: /music
       YTDLP_COOKIES_PATH: /app/cookies.txt
     volumes:
