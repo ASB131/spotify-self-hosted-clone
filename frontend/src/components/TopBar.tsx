@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { clearStoredToken } from "@/lib/auth";
 
 type Me = {
   display_name: string;
@@ -39,7 +40,7 @@ export function TopBar() {
     } catch {
       /* ignore */
     }
-    sessionStorage.removeItem("access_token");
+    clearStoredToken();
     router.push("/login");
   }
 

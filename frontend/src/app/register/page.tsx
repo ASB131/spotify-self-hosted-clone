@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { setStoredToken } from "@/lib/auth";
 import { fetchSetupStatus } from "@/lib/setup";
 
 export default function RegisterPage() {
@@ -24,7 +25,7 @@ export default function RegisterPage() {
         method: "POST",
         body: JSON.stringify({ email: form.email, password: form.password }),
       });
-      sessionStorage.setItem("access_token", login.access_token);
+      setStoredToken(login.access_token);
       router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");

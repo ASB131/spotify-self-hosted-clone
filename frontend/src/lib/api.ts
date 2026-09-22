@@ -129,59 +129,142 @@ export function getWsUrl(): string {
 
 export const WS_URL = typeof window !== "undefined" ? "" : process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isAuthError(err: unknown): boolean {
+  if (err instanceof ApiError) return err.status === 401;
+  const msg = String(err).toLowerCase();
+  return msg.includes("not authenticated") || msg.includes("unauthorized") || msg.includes("401");
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (refreshInFlight) return refreshInFlight;
+  const { setStoredToken, clearStoredToken } = await import("@/lib/auth");
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        clearStoredToken();
+        return false;
+      }
+      const data = (await res.json()) as { access_token?: string };
+      if (data.access_token) setStoredToken(data.access_token);
+      return true;
+    } catch {
+      clearStoredToken();
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+async function authHeaders(explicit?: string | null): Promise<HeadersInit> {
+  const headers: Record<string, string> = {};
+  if (explicit) {
+    headers.Authorization = `Bearer ${explicit}`;
+    return headers;
+  }
+  if (typeof window !== "undefined") {
+    const { getStoredToken } = await import("@/lib/auth");
+    const stored = getStoredToken();
+    if (stored) headers.Authorization = `Bearer ${stored}`;
+  }
+  return headers;
+}
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
+  const doFetch = async () => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      ...(await authHeaders(token)),
+      ...(options.headers || {}),
+    };
+    return fetch(`${getApiUrl()}${path}`, {
+      ...options,
+      credentials: "include",
+      headers,
+    });
   };
-  if (token) {
-    (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  } else if (typeof window !== "undefined") {
-    const stored = sessionStorage.getItem("access_token");
-    if (stored) (headers as Record<string, string>)["Authorization"] = `Bearer ${stored}`;
+
+  let res = await doFetch();
+  if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/refresh")) {
+    const refreshed = await tryRefreshSession();
+    if (refreshed) res = await doFetch();
   }
-  const res = await fetch(`${getApiUrl()}${path}`, {
-    ...options,
-    credentials: "include",
-    headers,
-  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     const detail = err.detail;
-    const message = typeof detail === "string" ? detail : Array.isArray(detail) ? detail[0]?.msg : res.statusText;
-    throw new Error(message || res.statusText);
+    const message =
+      typeof detail === "string" ? detail : Array.isArray(detail) ? detail[0]?.msg : res.statusText;
+    throw new ApiError(message || res.statusText || "Request failed", res.status);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
 export async function downloadBlob(path: string): Promise<Blob> {
-  const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
+  const { getStoredToken } = await import("@/lib/auth");
   const headers: HeadersInit = {};
-  if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${getApiUrl()}${path}`, { credentials: "include", headers });
+  const stored = getStoredToken();
+  if (stored) (headers as Record<string, string>)["Authorization"] = `Bearer ${stored}`;
+  let res = await fetch(`${getApiUrl()}${path}`, { credentials: "include", headers });
+  if (res.status === 401) {
+    const ok = await tryRefreshSession();
+    if (ok) {
+      const token = getStoredToken();
+      const h: HeadersInit = {};
+      if (token) (h as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+      res = await fetch(`${getApiUrl()}${path}`, { credentials: "include", headers: h });
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText || "Download failed");
+    throw new ApiError(err.detail || res.statusText || "Download failed", res.status);
   }
   return res.blob();
 }
 
 export async function uploadFile<T>(path: string, file: File): Promise<T> {
-  const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
+  const { getStoredToken } = await import("@/lib/auth");
   const form = new FormData();
   form.append("file", file);
   const headers: HeadersInit = {};
-  if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${getApiUrl()}${path}`, {
+  const stored = getStoredToken();
+  if (stored) (headers as Record<string, string>)["Authorization"] = `Bearer ${stored}`;
+  let res = await fetch(`${getApiUrl()}${path}`, {
     method: "POST",
     credentials: "include",
     headers,
     body: form,
   });
+  if (res.status === 401) {
+    const ok = await tryRefreshSession();
+    if (ok) {
+      const token = getStoredToken();
+      const h: HeadersInit = {};
+      if (token) (h as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+      res = await fetch(`${getApiUrl()}${path}`, { method: "POST", credentials: "include", headers: h, body: form });
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText || "Upload failed");
+    throw new ApiError(err.detail || res.statusText || "Upload failed", res.status);
   }
   return res.json();
 }
@@ -195,3 +278,4 @@ export function artUrl(track: Track) {
   if (!track.art_url) return null;
   return `${getApiUrl()}${track.art_url}`;
 }
+

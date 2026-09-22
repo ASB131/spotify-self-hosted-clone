@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, getWsUrl } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 function wsBaseUrl(): string {
   return getWsUrl();
@@ -19,7 +20,7 @@ export function useWebSocket(onEvent: (event: string, data: Record<string, unkno
 
     const connect = () => {
       if (closed) return;
-      const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
+      const token = getStoredToken();
       const base = wsBaseUrl();
       const url = token ? `${base}/api/v1/ws?token=${encodeURIComponent(token)}` : `${base}/api/v1/ws`;
       ws = new WebSocket(url);

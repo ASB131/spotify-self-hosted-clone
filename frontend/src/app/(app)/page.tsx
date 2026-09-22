@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, getApiUrl, type Playlist, type Track } from "@/lib/api";
+import { api, isAuthError, getApiUrl, type Playlist, type Track } from "@/lib/api";
 import { WebSocketBridge } from "@/lib/ws";
 import { fetchSetupStatus } from "@/lib/setup";
 import { usePlayerStore } from "@/store/player";
@@ -41,8 +41,8 @@ export default function HomePage() {
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Failed to load home");
-        if (String(e).includes("401") || String(e).toLowerCase().includes("unauthorized")) {
-          router.push("/login");
+        if (isAuthError(e)) {
+          router.replace("/login");
         }
       });
   };

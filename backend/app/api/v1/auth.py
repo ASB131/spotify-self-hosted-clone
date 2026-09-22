@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -24,8 +24,10 @@ from app.schemas.auth import (
     UserStats,
 )
 from app.services.security import (
+    TOKEN_TYPE_REFRESH,
     create_access_token,
     create_refresh_token,
+    decode_token,
     hash_password,
     verify_password,
 )
@@ -34,14 +36,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 
 
+def _cookie_secure() -> bool:
+    if settings.cookie_secure:
+        return True
+    return settings.public_web_url.lower().startswith("https://")
+
+
 def _set_auth_cookies(response: Response, user_id: int) -> None:
     access = create_access_token(user_id)
     refresh = create_refresh_token(user_id)
+    secure = _cookie_secure()
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=access,
         httponly=True,
-        secure=settings.cookie_secure,
+        secure=secure,
         samesite=settings.cookie_samesite,
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
@@ -50,11 +59,19 @@ def _set_auth_cookies(response: Response, user_id: int) -> None:
         key=REFRESH_COOKIE,
         value=refresh,
         httponly=True,
-        secure=settings.cookie_secure,
+        secure=secure,
         samesite=settings.cookie_samesite,
         max_age=settings.refresh_token_expire_days * 86400,
-        path="/api/v1/auth/refresh",
+        path="/",
     )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    secure = _cookie_secure()
+    response.delete_cookie(ACCESS_COOKIE, path="/", secure=secure, samesite=settings.cookie_samesite)
+    response.delete_cookie(REFRESH_COOKIE, path="/", secure=secure, samesite=settings.cookie_samesite)
+    # Legacy path from older builds
+    response.delete_cookie(REFRESH_COOKIE, path="/api/v1/auth/refresh", secure=secure, samesite=settings.cookie_samesite)
 
 
 @router.get("/setup-status", response_model=SetupStatus)
@@ -153,9 +170,30 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
 
 @router.post("/logout")
 def logout(response: Response) -> dict:
-    response.delete_cookie(ACCESS_COOKIE, path="/")
-    response.delete_cookie(REFRESH_COOKIE, path="/api/v1/auth/refresh")
+    _clear_auth_cookies(response)
     return {"ok": True}
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_session(request: Request, response: Response, db: Session = Depends(get_db)) -> TokenResponse:
+    """Issue a new access token from the httpOnly refresh cookie."""
+    raw = request.cookies.get(REFRESH_COOKIE)
+    if not raw:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = decode_token(raw)
+    if not payload or payload.get("type") != TOKEN_TYPE_REFRESH:
+        _clear_auth_cookies(response)
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = db.get(User, int(user_id))
+    if not user or not user.is_active:
+        _clear_auth_cookies(response)
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    access = create_access_token(user.id)
+    _set_auth_cookies(response, user.id)
+    return TokenResponse(access_token=access)
 
 
 @router.get("/me", response_model=UserPublic)

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { setStoredToken } from "@/lib/auth";
 import { fetchSetupStatus } from "@/lib/setup";
 
 export default function SetupPage() {
@@ -30,7 +31,7 @@ export default function SetupPage() {
         method: "POST",
         body: JSON.stringify({ email, display_name: displayName, password }),
       });
-      sessionStorage.setItem("access_token", data.access_token);
+      setStoredToken(data.access_token);
       router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");

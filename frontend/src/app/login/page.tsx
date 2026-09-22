@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { setStoredToken } from "@/lib/auth";
 import { fetchSetupStatus } from "@/lib/setup";
 
 export default function LoginPage() {
@@ -21,7 +22,13 @@ export default function LoginPage() {
           router.replace("/setup");
           return;
         }
-        setChecking(false);
+        // Already signed in? go home (or ?next=)
+        return api("/api/v1/auth/me")
+          .then(() => {
+            const params = new URLSearchParams(window.location.search);
+            router.replace(params.get("next") || "/");
+          })
+          .catch(() => setChecking(false));
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Server unreachable");
@@ -37,8 +44,9 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      sessionStorage.setItem("access_token", data.access_token);
-      router.replace("/");
+      setStoredToken(data.access_token);
+      const params = new URLSearchParams(window.location.search);
+      router.replace(params.get("next") || "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     }
