@@ -44,8 +44,8 @@ export function CollectionHero({
         : "linear-gradient(135deg, #3e5c3a 0%, #1a1a1a 55%, #121212 100%)");
 
   return (
-    <section className="relative -mx-6 -mt-6 mb-6 overflow-hidden">
-      <div className="px-6 pt-10 pb-6" style={{ background: bg }}>
+    <section className="relative -mx-6 mb-6 overflow-hidden">
+      <div className="px-6 pt-6 pb-6" style={{ background: bg }}>
         <div className="flex flex-col sm:flex-row items-end gap-6">
           <div className="w-48 h-48 sm:w-56 sm:h-56 shrink-0 rounded shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden bg-black/40">
             {liked ? (

@@ -55,7 +55,7 @@ export function AudioPlayerBar() {
 
   if (!current) {
     return (
-      <footer className="h-20 border-t border-white/10 bg-[#181818] px-4 flex items-center text-muted text-sm">
+      <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0">
         Select a track to play
       </footer>
     );
@@ -65,7 +65,7 @@ export function AudioPlayerBar() {
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (
-    <footer className="h-[90px] border-t border-white/10 bg-[#181818] px-3 grid grid-cols-[1fr_minmax(280px,40%)_1fr] items-center gap-3">
+    <footer className="h-[90px] rounded-lg bg-panel px-3 grid grid-cols-[1fr_minmax(280px,40%)_1fr] items-center gap-3 shrink-0">
       {/* Now playing */}
       <div className="flex items-center gap-3 min-w-0">
         {cover ? (

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { TrackTable } from "@/components/TrackTable";
 import { api, type Track } from "@/lib/api";
@@ -11,28 +12,39 @@ type SearchResults = {
   playlists: { id: number; name: string; is_liked_songs?: boolean; track_count?: number }[];
 };
 
-export default function SearchPage() {
-  const [q, setQ] = useState("");
+function SearchInner() {
+  const params = useSearchParams();
+  const [q, setQ] = useState(params.get("q") || "");
   const [results, setResults] = useState<SearchResults | null>(null);
 
-  async function search() {
-    if (q.length < 2) return;
-    const data = await api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(q)}`);
+  async function runSearch(term: string) {
+    if (term.length < 2) return;
+    const data = await api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(term)}`);
     setResults(data);
   }
 
+  useEffect(() => {
+    const term = params.get("q") || "";
+    setQ(term);
+    if (term.length >= 2) runSearch(term);
+  }, [params]);
+
   return (
-    <AppShell>
+    <>
       <h2 className="text-2xl font-bold mb-4">Search</h2>
       <div className="flex gap-2 mb-6">
         <input
-          className="flex-1 bg-panel rounded-full px-4 py-2"
+          className="flex-1 bg-[#242424] rounded-full px-4 py-2.5 outline-none focus:ring-2 focus:ring-white"
           placeholder="Tracks, artists, playlists…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && search()}
+          onKeyDown={(e) => e.key === "Enter" && runSearch(q.trim())}
         />
-        <button type="button" onClick={search} className="bg-spotify text-black px-6 rounded-full font-semibold">
+        <button
+          type="button"
+          onClick={() => runSearch(q.trim())}
+          className="bg-spotify text-black px-6 rounded-full font-semibold"
+        >
           Search
         </button>
       </div>
@@ -56,6 +68,16 @@ export default function SearchPage() {
           )}
         </>
       )}
+    </>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <AppShell>
+      <Suspense fallback={<p className="text-muted text-sm">Loading search…</p>}>
+        <SearchInner />
+      </Suspense>
     </AppShell>
   );
 }

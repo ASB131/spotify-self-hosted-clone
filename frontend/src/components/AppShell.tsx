@@ -2,18 +2,20 @@
 
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { AudioPlayerBar } from "@/components/AudioPlayerBar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="flex flex-1 min-h-0">
+    <div className="h-screen bg-black text-white flex flex-col p-2 gap-2 overflow-hidden">
+      <div className="flex flex-1 min-h-0 gap-2">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-6 pb-28">{children}</main>
+        <div className="flex-1 min-w-0 flex flex-col rounded-lg bg-surface overflow-hidden">
+          <TopBar />
+          <main className="flex-1 overflow-auto px-6 pb-4">{children}</main>
+        </div>
       </div>
-      <div className="fixed bottom-0 left-0 right-0">
-        <AudioPlayerBar />
-      </div>
+      <AudioPlayerBar />
     </div>
   );
 }

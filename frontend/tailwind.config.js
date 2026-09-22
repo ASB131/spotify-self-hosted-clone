@@ -3,9 +3,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        spotify: "#1db954",
-        panel: "#181818",
-        "panel-hover": "#282828",
+        spotify: "#1ed760",
+        panel: "#121212",
+        "panel-hover": "#1a1a1a",
         surface: "#121212",
         muted: "#b3b3b3",
       },

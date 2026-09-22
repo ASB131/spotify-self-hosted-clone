@@ -3,15 +3,41 @@
 @import "tailwindcss/utilities";
 
 :root {
-  --bg: #121212;
-  --panel: #181818;
-  --panel-hover: #282828;
-  --accent: #1db954;
+  --bg: #000000;
+  --panel: #121212;
+  --panel-hover: #1a1a1a;
+  --accent: #1ed760;
   --text: #ffffff;
   --muted: #b3b3b3;
 }
 
+html,
 body {
-  background: var(--bg);
+  height: 100%;
+}
+
+body {
+  background: #000;
   color: var(--text);
+  font-family: "CircularSpotify", "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+/* thin scrollbars like Spotify */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff4d transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #ffffff4d;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #ffffff80;
 }
