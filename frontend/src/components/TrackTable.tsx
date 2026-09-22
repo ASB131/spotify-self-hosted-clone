@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { artUrl, type Track } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { api, artUrl, type Playlist, type Track } from "@/lib/api";
 import { formatDuration, formatRelativeDate } from "@/lib/format";
 import { ArtistLinks } from "@/lib/artists";
 import { usePlayerStore } from "@/store/player";
 import { TrackEditModal } from "@/components/TrackEditModal";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 
 type Props = {
   tracks: Track[];
+  playlistId?: number;
+  isLikedSongs?: boolean;
   onChanged?: () => void;
   onUpgrade?: (id: number) => void;
   emptyMessage?: string;
@@ -16,10 +19,92 @@ type Props = {
   onRemove?: (id: number) => void;
 };
 
-export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props) {
+type MenuState = { x: number; y: number; track: Track } | null;
+
+export function TrackTable({
+  tracks,
+  playlistId,
+  isLikedSongs,
+  onChanged,
+  onUpgrade,
+  emptyMessage,
+}: Props) {
   const current = usePlayerStore((s) => s.current);
   const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
+  const addToQueue = usePlayerStore((s) => s.addToQueue);
   const [editing, setEditing] = useState<Track | null>(null);
+  const [menu, setMenu] = useState<MenuState>(null);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+
+  useEffect(() => {
+    api<Playlist[]>("/api/v1/playlists")
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]));
+  }, []);
+
+  const addTargets = useMemo(
+    () => playlists.filter((p) => !p.is_liked_songs && p.id !== playlistId),
+    [playlists, playlistId]
+  );
+
+  const canRemoveFromPlaylist = !!playlistId && !isLikedSongs;
+
+  async function addTrackToPlaylist(trackId: number, destId: number) {
+    try {
+      await api(`/api/v1/playlists/${destId}/tracks`, {
+        method: "POST",
+        body: JSON.stringify({ track_id: trackId }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function removeFromPlaylist(trackId: number) {
+    if (!playlistId || isLikedSongs) return;
+    try {
+      await api(`/api/v1/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
+      onChanged?.();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const menuItems: ContextMenuItem[] = menu
+    ? [
+        {
+          id: "add-playlist",
+          label: "Add to playlist",
+          submenu:
+            addTargets.length > 0
+              ? addTargets.map((p) => ({
+                  id: `pl-${p.id}`,
+                  label: p.name,
+                  onClick: () => {
+                    void addTrackToPlaylist(menu.track.id, p.id);
+                  },
+                }))
+              : [{ id: "none", label: "No other playlists", onClick: () => undefined, disabled: true }],
+        },
+        ...(canRemoveFromPlaylist
+          ? [
+              {
+                id: "remove",
+                label: "Remove from playlist",
+                danger: true,
+                onClick: () => {
+                  void removeFromPlaylist(menu.track.id);
+                },
+              } satisfies ContextMenuItem,
+            ]
+          : []),
+        {
+          id: "queue",
+          label: "Add to queue",
+          onClick: () => addToQueue(menu.track),
+        },
+      ]
+    : [];
 
   if (tracks.length === 0) {
     return <p className="text-sm text-muted py-8">{emptyMessage || "No songs yet."}</p>;
@@ -47,9 +132,11 @@ export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props
               return (
                 <tr
                   key={t.id}
-                  className={`group h-14 border-b border-transparent hover:bg-white/[0.08] ${
-                    active ? "" : ""
-                  }`}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, track: t });
+                  }}
+                  className="group h-14 border-b border-transparent hover:bg-white/[0.08]"
                 >
                   <td className="text-right pr-4 tabular-nums text-muted group-hover:text-white w-12">
                     <span className={active ? "text-spotify" : ""}>{i + 1}</span>
@@ -118,6 +205,7 @@ export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props
           </tbody>
         </table>
       </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       <TrackEditModal
         track={editing}
         onClose={() => setEditing(null)}

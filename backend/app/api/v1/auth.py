@@ -82,8 +82,8 @@ def bootstrap_admin(body: BootstrapAdminRequest, response: Response, db: Session
     db.add(
         Playlist(
             user_id=user.id,
-            name="Liked Songs",
-            description="Your liked tracks",
+            name="All Songs",
+            description="Every track in your library",
             is_liked_songs=True,
         )
     )
@@ -127,8 +127,8 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
     db.add(
         Playlist(
             user_id=user.id,
-            name="Liked Songs",
-            description="Your liked tracks",
+            name="All Songs",
+            description="Every track in your library",
             is_liked_songs=True,
         )
     )

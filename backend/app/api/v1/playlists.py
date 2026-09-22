@@ -106,7 +106,7 @@ def update_playlist(
 ):
     pl = _owned_playlist(db, user, playlist_id)
     if pl.is_liked_songs and body.name is not None:
-        raise HTTPException(status_code=400, detail="Cannot rename Liked Songs")
+        raise HTTPException(status_code=400, detail="Cannot rename All Songs")
     if body.name is not None:
         pl.name = body.name.strip()
     if body.description is not None:
@@ -118,6 +118,67 @@ def update_playlist(
     return _playlist_public(pl)
 
 
+class PlaylistTrackAdd(BaseModel):
+    track_id: int
+
+
+@router.post("/{playlist_id}/tracks", response_model=TrackPublic)
+def add_track_to_playlist(
+    playlist_id: int,
+    body: PlaylistTrackAdd,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.track import Track
+    from app.models.user_track import UserTrack
+    from app.services.library import _add_to_playlist
+
+    pl = _owned_playlist(db, user, playlist_id)
+    track = db.get(Track, body.track_id)
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    owned = db.scalar(
+        select(UserTrack).where(UserTrack.user_id == user.id, UserTrack.track_id == track.id)
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Track not in your library")
+    _add_to_playlist(db, pl.id, track.id)
+    db.commit()
+    pt = db.scalar(
+        select(PlaylistTrack)
+        .where(PlaylistTrack.playlist_id == pl.id, PlaylistTrack.track_id == track.id)
+        .options(selectinload(PlaylistTrack.track))
+    )
+    if not pt:
+        raise HTTPException(status_code=500, detail="Failed to add track")
+    return _track_public_from_pt(pt)
+
+
+@router.delete("/{playlist_id}/tracks/{track_id}")
+def remove_track_from_playlist(
+    playlist_id: int,
+    track_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    pl = _owned_playlist(db, user, playlist_id)
+    if pl.is_liked_songs:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot remove tracks from All Songs — delete the song from your library instead",
+        )
+    pt = db.scalar(
+        select(PlaylistTrack).where(
+            PlaylistTrack.playlist_id == pl.id, PlaylistTrack.track_id == track_id
+        )
+    )
+    if not pt:
+        raise HTTPException(status_code=404, detail="Track not in playlist")
+    db.delete(pt)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.post("/{playlist_id}/cover", response_model=PlaylistPublic)
 async def upload_playlist_cover(
     playlist_id: int,
@@ -127,7 +188,7 @@ async def upload_playlist_cover(
 ):
     pl = _owned_playlist(db, user, playlist_id)
     if pl.is_liked_songs:
-        raise HTTPException(status_code=400, detail="Cannot change Liked Songs cover")
+        raise HTTPException(status_code=400, detail="Cannot change All Songs cover")
     ctype = (file.content_type or "").lower()
     if ctype not in ALLOWED_IMAGE:
         raise HTTPException(status_code=400, detail="Cover must be JPEG, PNG, or WebP")
@@ -183,7 +244,7 @@ def delete_playlist(playlist_id: int, user: User = Depends(get_current_user), db
     if not pl or pl.user_id != user.id:
         raise HTTPException(status_code=404, detail="Playlist not found")
     if pl.is_liked_songs:
-        raise HTTPException(status_code=400, detail="Cannot delete Liked Songs")
+        raise HTTPException(status_code=400, detail="Cannot delete All Songs")
     if pl.cover_relative_path:
         try:
             path = art_file_path(pl.cover_relative_path)

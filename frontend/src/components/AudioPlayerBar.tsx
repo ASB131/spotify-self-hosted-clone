@@ -22,6 +22,8 @@ export function AudioPlayerBar() {
     duration,
     shuffle,
     repeat,
+    queue,
+    queuePanelOpen,
     toggle,
     next,
     prev,
@@ -35,6 +37,7 @@ export function AudioPlayerBar() {
     onEnded,
     hydrate,
     persist,
+    toggleQueuePanel,
   } = usePlayerStore();
 
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,7 +169,22 @@ export function AudioPlayerBar() {
         </div>
       </div>
 
-      <div className="flex justify-end items-center gap-2 min-w-0">
+      <div className="flex justify-end items-center gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={toggleQueuePanel}
+          className={`relative transition-colors ${queuePanelOpen ? "text-spotify" : "text-muted hover:text-white"}`}
+          aria-label="Queue"
+          aria-pressed={queuePanelOpen}
+          title="Queue"
+        >
+          <IconQueue />
+          {queue.length > 0 && (
+            <span className="absolute -top-1.5 -right-2 min-w-[14px] h-3.5 px-0.5 rounded-full bg-spotify text-black text-[9px] font-bold flex items-center justify-center">
+              {queue.length > 99 ? "99+" : queue.length}
+            </span>
+          )}
+        </button>
         <IconVolume />
         <input
           type="range"
@@ -230,6 +248,14 @@ function IconVolume() {
   return (
     <svg viewBox="0 0 16 16" className="w-4 h-4 text-muted" fill="currentColor">
       <path d="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.748 3.748 0 0 1-1.162-5.236l.012-.02A3.748 3.748 0 0 1 3.066 4.5H3.75l5.616-3.24A.75.75 0 0 1 9.74.85zM11.5 4a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-1.5 0v-6.5A.75.75 0 0 1 11.5 4zm2.5 1a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 14 5z" />
+    </svg>
+  );
+}
+
+function IconQueue() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="currentColor" aria-hidden>
+      <path d="M15 15H1v-1.5h14V15zm0-4.5H1V9h14v1.5zm-14-7A2.5 2.5 0 0 1 3.5 1h9a2.5 2.5 0 0 1 0 5h-9A2.5 2.5 0 0 1 1 3.5zm2.5-1a1 1 0 0 0 0 2h9a1 1 0 1 0 0-2h-9z" />
     </svg>
   );
 }

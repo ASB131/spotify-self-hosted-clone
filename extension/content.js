@@ -77,7 +77,7 @@ function openModal() {
       </label>
       <label>Destination
         <select id="rs-dest">
-          <option value="liked">Liked Songs</option>
+          <option value="liked">All Songs</option>
         </select>
       </label>
       <p id="rs-playlists-hint" style="font-size:12px;color:#b3b3b3;margin:4px 0 0">Loading playlists…</p>
@@ -130,7 +130,7 @@ async function loadPlaylists(backdrop) {
       hint.style.color = "#f87171";
       return;
     }
-    // Keep Liked Songs first; append user playlists
+    // Keep All Songs first; append user playlists
     const custom = res.data.filter((p) => !p.is_liked_songs);
     custom.forEach((p) => {
       if ([...sel.options].some((o) => o.value === String(p.id))) return;

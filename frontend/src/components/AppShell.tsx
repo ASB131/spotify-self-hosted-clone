@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { AudioPlayerBar } from "@/components/AudioPlayerBar";
+import { QueuePanel } from "@/components/QueuePanel";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -16,6 +17,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <AudioPlayerBar />
+      <QueuePanel />
     </div>
   );
 }

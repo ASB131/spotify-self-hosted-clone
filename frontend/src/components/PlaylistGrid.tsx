@@ -29,7 +29,7 @@ export function PlaylistGrid({ playlists, emptyMessage }: Props) {
             }`}
           >
             {p.is_liked_songs ? (
-              "♥"
+              "♪"
             ) : p.cover_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={`${getApiUrl()}${p.cover_url}`} alt="" className="w-full h-full object-cover" />

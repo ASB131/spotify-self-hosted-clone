@@ -67,7 +67,7 @@ export function CollectionHero({
     >
       {liked ? (
         <div className="w-full h-full bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center text-white text-7xl">
-          ♥
+          ♪
         </div>
       ) : customCover ? (
         // eslint-disable-next-line @next/next/no-img-element

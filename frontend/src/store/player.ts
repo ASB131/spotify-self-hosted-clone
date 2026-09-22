@@ -33,8 +33,16 @@ type PlayerState = {
   bindAudio: (el: HTMLAudioElement | null) => void;
   hydrate: () => void;
   persist: () => void;
+  queuePanelOpen: boolean;
+  setQueuePanelOpen: (open: boolean) => void;
+  toggleQueuePanel: () => void;
   setQueue: (tracks: Track[], startIndex?: number) => void;
   playTrackInContext: (track: Track, context: Track[]) => void;
+  addToQueue: (tracks: Track | Track[]) => void;
+  removeFromQueue: (index: number) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
+  playAt: (index: number) => void;
+  clearQueue: () => void;
   setTrack: (track: Track | null) => void;
   play: () => void;
   pause: () => void;
@@ -100,8 +108,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   duration: 0,
   hydrated: false,
   audioRef: null,
+  queuePanelOpen: false,
 
   bindAudio: (el) => set({ audioRef: el }),
+
+  setQueuePanelOpen: (open) => set({ queuePanelOpen: open }),
+  toggleQueuePanel: () => set({ queuePanelOpen: !get().queuePanelOpen }),
 
   persist: () => {
     if (typeof window === "undefined") return;
@@ -177,6 +189,85 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const idx = context.findIndex((t) => t.id === track.id);
     if (idx >= 0) get().setQueue(context, idx);
     else get().setQueue([track, ...context], 0);
+  },
+
+  addToQueue: (tracks) => {
+    const list = Array.isArray(tracks) ? tracks : [tracks];
+    if (!list.length) return;
+    const { queue, current } = get();
+    if (!queue.length || !current) {
+      get().setQueue(list, 0);
+      return;
+    }
+    set({ queue: [...queue, ...list] });
+    get().persist();
+  },
+
+  removeFromQueue: (index) => {
+    const { queue, queueIndex } = get();
+    if (index < 0 || index >= queue.length) return;
+    const nextQueue = queue.filter((_, i) => i !== index);
+    if (!nextQueue.length) {
+      get().audioRef?.pause();
+      set({ queue: [], queueIndex: -1, current: null, isPlaying: false, progress: 0 });
+      get().persist();
+      return;
+    }
+    let nextIndex = queueIndex;
+    let shouldReload = false;
+    if (index < queueIndex) nextIndex = queueIndex - 1;
+    else if (index === queueIndex) {
+      nextIndex = Math.min(index, nextQueue.length - 1);
+      shouldReload = true;
+    }
+    const track = nextQueue[nextIndex];
+    set({ queue: nextQueue, queueIndex: nextIndex, current: track });
+    if (shouldReload) {
+      set({ progress: 0, isPlaying: true });
+      loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    }
+    get().persist();
+  },
+
+  reorderQueue: (fromIndex, toIndex) => {
+    const { queue, queueIndex } = get();
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= queue.length ||
+      toIndex >= queue.length
+    ) {
+      return;
+    }
+    const next = [...queue];
+    const [item] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, item);
+    let nextIndex = queueIndex;
+    if (queueIndex === fromIndex) nextIndex = toIndex;
+    else if (fromIndex < queueIndex && toIndex >= queueIndex) nextIndex = queueIndex - 1;
+    else if (fromIndex > queueIndex && toIndex <= queueIndex) nextIndex = queueIndex + 1;
+    set({ queue: next, queueIndex: nextIndex, current: next[nextIndex] });
+    get().persist();
+  },
+
+  playAt: (index) => {
+    const { queue } = get();
+    if (index < 0 || index >= queue.length) return;
+    const track = queue[index];
+    set({ current: track, queueIndex: index, progress: 0, isPlaying: true });
+    loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    get().persist();
+  },
+
+  clearQueue: () => {
+    const { queueIndex, current } = get();
+    if (!current || queueIndex < 0) {
+      get().setQueue([]);
+      return;
+    }
+    set({ queue: [current], queueIndex: 0 });
+    get().persist();
   },
 
   setTrack: (track) => {

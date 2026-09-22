@@ -144,6 +144,8 @@ export default function PlaylistPage() {
       )}
       <TrackTable
         tracks={tracks}
+        playlistId={playlist?.id}
+        isLikedSongs={playlist?.is_liked_songs}
         onChanged={load}
         emptyMessage="This playlist is empty. Save tracks to it from the extension."
       />
