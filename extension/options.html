@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Resonance Extension</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 480px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      label {
+        display: block;
+        margin-top: 16px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 4px;
+      }
+      button {
+        margin-top: 24px;
+        padding: 10px 20px;
+        background: #1db954;
+        border: none;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Resonance extension</h1>
+    <p>Log in on your web app, copy the access token from browser devtools (sessionStorage), or use the token returned by login API.</p>
+    <label
+      >API base URL
+      <input id="apiBase" placeholder="http://localhost:8000" />
+    </label>
+    <label
+      >JWT access token
+      <input id="accessToken" type="password" />
+    </label>
+    <button id="save">Save</button>
+    <p id="msg"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

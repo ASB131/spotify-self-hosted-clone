@@ -1,0 +1,17 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+:root {
+  --bg: #121212;
+  --panel: #181818;
+  --panel-hover: #282828;
+  --accent: #1db954;
+  --text: #ffffff;
+  --muted: #b3b3b3;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}

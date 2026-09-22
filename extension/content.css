@@ -1,0 +1,55 @@
+#resonance-save-btn {
+  margin-left: 12px;
+  padding: 0 16px;
+  height: 36px;
+  border-radius: 18px;
+  border: none;
+  background: #1db954;
+  color: #000;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#resonance-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#resonance-modal {
+  background: #282828;
+  color: #fff;
+  padding: 24px;
+  border-radius: 8px;
+  width: 360px;
+  font-family: system-ui, sans-serif;
+}
+
+#resonance-modal label {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #b3b3b3;
+}
+
+#resonance-modal input,
+#resonance-modal select {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  border: none;
+  background: #121212;
+  color: #fff;
+}
+
+#resonance-modal-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
