@@ -1,28 +1,47 @@
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.set({ apiBase: "http://localhost:8000" });
+  chrome.storage.local.set({ apiBase: "http://localhost:8000", webBase: "http://localhost:3000" });
 });
+
+function saveAuth(payload) {
+  const apiBase = String(payload.apiBase || "http://localhost:8000").replace(/\/$/, "");
+  const webBase = String(payload.webBase || "http://localhost:3000").replace(/\/$/, "");
+  const accessToken = String(payload.accessToken || "").trim();
+  const data = { apiBase, webBase, accessToken };
+  return Promise.all([
+    new Promise((resolve) => chrome.storage.local.set(data, resolve)),
+    new Promise((resolve) => chrome.storage.sync.set(data, resolve)),
+  ]).then(() => ({ ok: true }));
+}
 
 /**
  * Content scripts must not call the API directly (CORS Origin is often youtube.com).
- * All API traffic goes through this service worker, which has host_permissions and
- * is not subject to page CORS.
+ * All API traffic goes through this service worker.
  */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "saveAuth") {
+    saveAuth(message)
+      .then((r) => sendResponse(r))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+
   if (message?.type !== "api") {
     return false;
   }
   (async () => {
     try {
-      const cfg = await chrome.storage.sync.get(["apiBase", "accessToken"]);
-      const apiBase = (cfg.apiBase || "http://localhost:8000").replace(/\/$/, "");
+      const local = await chrome.storage.local.get(["apiBase", "accessToken"]);
+      const sync = await chrome.storage.sync.get(["apiBase", "accessToken"]);
+      const apiBase = (local.apiBase || sync.apiBase || "http://localhost:8000").replace(/\/$/, "");
+      const accessToken = local.accessToken || sync.accessToken || "";
       const path = message.path || "";
       const method = message.method || "GET";
       const headers = {
         Accept: "application/json",
         ...(message.headers || {}),
       };
-      if (cfg.accessToken) {
-        headers.Authorization = `Bearer ${cfg.accessToken}`;
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
       }
       let body;
       if (message.body !== undefined && message.body !== null) {
@@ -46,5 +65,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
     }
   })();
-  return true; // keep channel open for async sendResponse
+  return true;
 });

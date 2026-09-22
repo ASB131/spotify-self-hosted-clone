@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Resonance — Save to Library",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Send YouTube videos to your self-hosted music server",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://www.youtube.com/*", "http://*/*", "https://*/*"],
@@ -13,6 +13,11 @@
       "matches": ["https://www.youtube.com/*"],
       "js": ["content.js"],
       "css": ["content.css"]
+    },
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["connect_bridge.js"],
+      "run_at": "document_start"
     }
   ],
   "options_ui": {

@@ -34,11 +34,12 @@ def create_token(subject: str, token_type: str, expires_delta: timedelta) -> str
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: int, *, expires_minutes: int | None = None) -> str:
+    minutes = expires_minutes if expires_minutes is not None else settings.access_token_expire_minutes
     return create_token(
         str(user_id),
         TOKEN_TYPE_ACCESS,
-        timedelta(minutes=settings.access_token_expire_minutes),
+        timedelta(minutes=minutes),
     )
 
 

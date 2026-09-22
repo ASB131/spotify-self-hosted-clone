@@ -179,5 +179,6 @@ def my_stats(user: User = Depends(get_current_user), db: Session = Depends(get_d
 
 @router.get("/extension-token", response_model=TokenResponse)
 def extension_token(user: User = Depends(get_current_user)) -> TokenResponse:
-    """Issue a fresh JWT for the Chrome extension (paste into extension options)."""
-    return TokenResponse(access_token=create_access_token(user.id))
+    """Issue a long-lived JWT for the Chrome extension (avoids 30‑minute web session expiry)."""
+    minutes = max(1, settings.extension_token_expire_days * 24 * 60)
+    return TokenResponse(access_token=create_access_token(user.id, expires_minutes=minutes))

@@ -1,10 +1,12 @@
 function getConfig() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(["apiBase", "accessToken", "webBase"], (data) => {
-      resolve({
-        apiBase: data.apiBase || "http://localhost:8000",
-        accessToken: data.accessToken || "",
-        webBase: data.webBase || "http://localhost:3000",
+    chrome.storage.local.get(["apiBase", "accessToken", "webBase"], (local) => {
+      chrome.storage.sync.get(["apiBase", "accessToken", "webBase"], (sync) => {
+        resolve({
+          apiBase: local.apiBase || sync.apiBase || "http://localhost:8000",
+          accessToken: local.accessToken || sync.accessToken || "",
+          webBase: local.webBase || sync.webBase || "http://localhost:3000",
+        });
       });
     });
   });
@@ -78,6 +80,7 @@ function openModal() {
           <option value="liked">Liked Songs</option>
         </select>
       </label>
+      <p id="rs-playlists-hint" style="font-size:12px;color:#b3b3b3;margin:4px 0 0">Loading playlists…</p>
       <div id="resonance-modal-actions">
         <button type="button" id="rs-cancel">Cancel</button>
         <button type="button" id="rs-save">Download</button>
@@ -99,22 +102,53 @@ function escapeAttr(s) {
 }
 
 async function loadPlaylists(backdrop) {
+  const hint = backdrop.querySelector("#rs-playlists-hint");
+  const sel = backdrop.querySelector("#rs-dest");
   const cfg = await getConfig();
-  if (!cfg.accessToken) return;
+  if (!cfg.accessToken) {
+    hint.textContent = "Extension not connected — open Options → Extension connect.";
+    hint.style.color = "#f87171";
+    return;
+  }
+  hint.textContent = "Loading playlists…";
+  hint.style.color = "#b3b3b3";
   try {
     const res = await apiCall("/api/v1/playlists", "GET");
-    if (!res.ok || !Array.isArray(res.data)) return;
-    const sel = backdrop.querySelector("#rs-dest");
-    res.data
-      .filter((p) => !p.is_liked_songs)
-      .forEach((p) => {
-        const opt = document.createElement("option");
-        opt.value = String(p.id);
-        opt.textContent = p.name;
-        sel.appendChild(opt);
-      });
-  } catch {
-    /* ignore */
+    if (!res.ok) {
+      const detail =
+        typeof res.data?.detail === "string"
+          ? res.data.detail
+          : res.status === 401
+            ? "Session expired — reconnect the extension"
+            : `Could not load playlists (HTTP ${res.status})`;
+      hint.textContent = detail;
+      hint.style.color = "#f87171";
+      return;
+    }
+    if (!Array.isArray(res.data)) {
+      hint.textContent = "Unexpected playlist response from server.";
+      hint.style.color = "#f87171";
+      return;
+    }
+    // Keep Liked Songs first; append user playlists
+    const custom = res.data.filter((p) => !p.is_liked_songs);
+    custom.forEach((p) => {
+      if ([...sel.options].some((o) => o.value === String(p.id))) return;
+      const opt = document.createElement("option");
+      opt.value = String(p.id);
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    if (custom.length === 0) {
+      hint.textContent = "No custom playlists yet — create one in Your Library.";
+      hint.style.color = "#b3b3b3";
+    } else {
+      hint.textContent = `${custom.length} playlist${custom.length === 1 ? "" : "s"} available`;
+      hint.style.color = "#1db954";
+    }
+  } catch (e) {
+    hint.textContent = e.message || "Failed to load playlists";
+    hint.style.color = "#f87171";
   }
 }
 
