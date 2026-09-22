@@ -113,13 +113,14 @@ services:
     env_file: .env
     environment:
       INTERNAL_API_URL: http://api:8000
+      API_DIRECT_URL: ${NEXT_PUBLIC_API_DIRECT_URL:-}
+      WS_URL: ${NEXT_PUBLIC_WS_URL:-}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
 
-  # Optional Lidarr only (use your existing qBittorrent / torrent client).
-  # Start with: docker compose --profile arr up -d
+  # Optional Lidarr only (use your existing qBittorrent / torrent client).  # Start with: docker compose --profile arr up -d
   # Point Lidarr at your host qBittorrent (see Setup guide). Do not package qBittorrent here.
   lidarr:
     profiles: ["arr"]

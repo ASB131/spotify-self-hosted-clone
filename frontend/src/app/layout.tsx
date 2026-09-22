@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { RuntimeConfig } from "@/components/RuntimeConfig";
 import "./globals.css";
 
 const sans = Plus_Jakarta_Sans({
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={sans.variable}>
-      <body className={sans.className}>{children}</body>
+      <body className={sans.className}>
+        <RuntimeConfig />
+        {children}
+      </body>
     </html>
   );
 }

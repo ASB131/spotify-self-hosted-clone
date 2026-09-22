@@ -1,23 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, getWsUrl } from "@/lib/api";
 
 function wsBaseUrl(): string {
-  const env = process.env.NEXT_PUBLIC_WS_URL;
-  if (env && env.trim()) return env.replace(/\/$/, "");
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    // Prefer direct API host for websockets (Next proxy may not upgrade WS)
-    const direct = process.env.NEXT_PUBLIC_API_DIRECT_URL || "http://localhost:8000";
-    try {
-      const u = new URL(direct);
-      return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}`;
-    } catch {
-      return `${proto}//${window.location.hostname}:8000`;
-    }
-  }
-  return "ws://localhost:8000";
+  return getWsUrl();
 }
 
 export function useWebSocket(onEvent: (event: string, data: Record<string, unknown>) => void) {
