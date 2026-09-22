@@ -45,6 +45,6 @@ def user_setup_checklist(
         extension_cors_hint=(
             "Reload the unpacked extension after updates. API calls go through the extension "
             "background worker (no CORS_ORIGINS edit required for YouTube saves). "
-            "Keep API URL set to your Resonance API and a fresh token from Extension connect."
+            "Keep API URL set to your Media player API and a fresh token from Extension connect."
         ),
     )

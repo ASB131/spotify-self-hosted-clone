@@ -15,11 +15,12 @@ type Props = {
   onChanged?: () => void;
   onUpgrade?: (id: number) => void;
   emptyMessage?: string;
-  /** @deprecated use settings modal */
   onRemove?: (id: number) => void;
 };
 
 type MenuState = { x: number; y: number; track: Track } | null;
+type SortKey = "index" | "title" | "artist" | "added" | "duration";
+type SortDir = "asc" | "desc";
 
 export function TrackTable({
   tracks,
@@ -35,6 +36,8 @@ export function TrackTable({
   const [editing, setEditing] = useState<Track | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>("added");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   useEffect(() => {
     api<Playlist[]>("/api/v1/playlists")
@@ -48,6 +51,42 @@ export function TrackTable({
   );
 
   const canRemoveFromPlaylist = !!playlistId && !isLikedSongs;
+
+  const sorted = useMemo(() => {
+    const copy = [...tracks];
+    const mul = sortDir === "asc" ? 1 : -1;
+    copy.sort((a, b) => {
+      if (sortKey === "index") {
+        const ia = tracks.indexOf(a);
+        const ib = tracks.indexOf(b);
+        return (ia - ib) * mul;
+      }
+      if (sortKey === "title") {
+        return a.title.localeCompare(b.title, undefined, { sensitivity: "base" }) * mul;
+      }
+      if (sortKey === "artist") {
+        return (a.artist || "").localeCompare(b.artist || "", undefined, { sensitivity: "base" }) * mul;
+      }
+      if (sortKey === "added") {
+        const ta = a.added_at ? new Date(a.added_at).getTime() : 0;
+        const tb = b.added_at ? new Date(b.added_at).getTime() : 0;
+        return (ta - tb) * mul;
+      }
+      const da = a.duration_seconds ?? 0;
+      const db = b.duration_seconds ?? 0;
+      return (da - db) * mul;
+    });
+    return copy;
+  }, [tracks, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "added" || key === "duration" ? "desc" : "asc");
+    }
+  }
 
   async function addTrackToPlaylist(trackId: number, destId: number) {
     try {
@@ -116,19 +155,33 @@ export function TrackTable({
         <table className="w-full text-sm border-collapse table-fixed">
           <thead className="sticky top-0 z-10 bg-surface/95 backdrop-blur">
             <tr className="text-muted border-b border-white/10 text-xs uppercase tracking-wider">
-              <th className="w-12 font-normal text-right pr-4 py-2">#</th>
-              <th className="font-normal text-left py-2">Title</th>
-              <th className="font-normal text-left py-2 hidden md:table-cell w-14" aria-label="Source" />
-              <th className="font-normal text-left py-2 hidden lg:table-cell w-14" aria-label="Quality" />
-              <th className="font-normal text-left py-2 hidden lg:table-cell w-14" aria-label="Added via" />
-              <th className="font-normal text-left py-2 hidden md:table-cell w-36">Date added</th>
-              <th className="font-normal text-right py-2 w-24 pr-2" aria-label="Duration">
+              <SortTh active={sortKey === "index"} dir={sortDir} onClick={() => toggleSort("index")} className="w-12 text-right pr-4">
+                #
+              </SortTh>
+              <SortTh active={sortKey === "title"} dir={sortDir} onClick={() => toggleSort("title")} className="text-left">
+                Title
+              </SortTh>
+              <SortTh
+                active={sortKey === "added"}
+                dir={sortDir}
+                onClick={() => toggleSort("added")}
+                className="text-left hidden md:table-cell w-40"
+              >
+                Date added
+              </SortTh>
+              <SortTh
+                active={sortKey === "duration"}
+                dir={sortDir}
+                onClick={() => toggleSort("duration")}
+                className="text-right w-20 pr-4"
+                ariaLabel="Duration"
+              >
                 <ClockIcon />
-              </th>
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {tracks.map((t, i) => {
+            {sorted.map((t, i) => {
               const active = current?.id === t.id;
               const src = artUrl(t);
               return (
@@ -147,7 +200,7 @@ export function TrackTable({
                     <div className="flex items-center gap-3 min-w-0">
                       <button
                         type="button"
-                        onClick={() => playTrackInContext(t, tracks)}
+                        onClick={() => playTrackInContext(t, sorted)}
                         className="w-10 h-10 shrink-0 bg-black/40 overflow-hidden rounded-sm"
                         aria-label={`Play ${t.title}`}
                       >
@@ -161,7 +214,7 @@ export function TrackTable({
                       <div className="min-w-0">
                         <button
                           type="button"
-                          onClick={() => playTrackInContext(t, tracks)}
+                          onClick={() => playTrackInContext(t, sorted)}
                           className={`block truncate font-normal text-left hover:underline ${
                             active ? "text-spotify" : "text-white"
                           }`}
@@ -172,20 +225,11 @@ export function TrackTable({
                       </div>
                     </div>
                   </td>
-                  <td className="py-2 hidden md:table-cell w-14 align-middle">
-                    <SourceBadge source={t.source} />
-                  </td>
-                  <td className="py-2 hidden lg:table-cell w-14 align-middle">
-                    <FormatBadge format={t.format} />
-                  </td>
-                  <td className="py-2 hidden lg:table-cell w-14 align-middle">
-                    <ViaBadge via={t.added_via} />
-                  </td>
                   <td className="py-2 text-muted hidden md:table-cell text-sm">
                     {formatRelativeDate(t.added_at)}
                   </td>
-                  <td className="py-2 text-right text-muted tabular-nums pr-2">
-                    <div className="inline-flex items-center justify-end gap-3 min-w-[5.5rem]">
+                  <td className="py-2 text-right text-muted pr-4">
+                    <div className="inline-flex items-center justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
@@ -204,7 +248,9 @@ export function TrackTable({
                           FLAC
                         </button>
                       )}
-                      <span className="w-10 text-right">{formatDuration(t.duration_seconds)}</span>
+                      <span className="font-mono tabular-nums text-sm w-[4.5ch] text-right inline-block">
+                        {formatDuration(t.duration_seconds)}
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -214,100 +260,40 @@ export function TrackTable({
         </table>
       </div>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
-      <TrackEditModal
-        track={editing}
-        onClose={() => setEditing(null)}
-        onSaved={() => onChanged?.()}
-      />
+      <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={() => onChanged?.()} />
     </>
   );
 }
 
-function SourceBadge({ source }: { source?: string | null }) {
-  const key = (source || "upload").toLowerCase();
-  let label = "Other";
-  let className = "bg-amber-400/15 text-amber-200/90 border-amber-400/25";
-  if (key === "youtube") {
-    label = "YT";
-    className = "bg-red-400/15 text-red-300/90 border-red-400/25";
-  } else if (key === "spotify") {
-    label = "SP";
-    className = "bg-emerald-400/15 text-emerald-300/90 border-emerald-400/25";
-  } else if (key === "upload") {
-    label = "Up";
-  } else if (key === "lidarr") {
-    label = "LD";
-    className = "bg-sky-400/15 text-sky-200/90 border-sky-400/25";
-  }
-  const title =
-    key === "youtube"
-      ? "YouTube"
-      : key === "spotify"
-        ? "Spotify"
-        : key === "upload"
-          ? "Upload"
-          : key === "lidarr"
-            ? "Lidarr"
-            : "Other source";
+function SortTh({
+  children,
+  active,
+  dir,
+  onClick,
+  className = "",
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  dir: SortDir;
+  onClick: () => void;
+  className?: string;
+  ariaLabel?: string;
+}) {
   return (
-    <span
-      title={title}
-      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${className}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function FormatBadge({ format }: { format?: string | null }) {
-  const key = (format || "mp3").toLowerCase();
-  const isFlac = key === "flac";
-  return (
-    <span
-      title={isFlac ? "FLAC" : "MP3"}
-      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${
-        isFlac
-          ? "bg-violet-400/15 text-violet-200/90 border-violet-400/25"
-          : "bg-white/10 text-white/70 border-white/15"
-      }`}
-    >
-      {isFlac ? "FL" : "MP3"}
-    </span>
-  );
-}
-
-function ViaBadge({ via }: { via?: string | null }) {
-  const key = (via || "library").toLowerCase();
-  let label = "Lib";
-  let title = "Library";
-  let className = "bg-white/10 text-white/70 border-white/15";
-  if (key === "extension") {
-    label = "Ext";
-    title = "Chrome extension";
-    className = "bg-orange-400/15 text-orange-200/90 border-orange-400/25";
-  } else if (key === "discover_weekly") {
-    label = "DW";
-    title = "Discover Weekly";
-    className = "bg-rose-400/15 text-rose-200/90 border-rose-400/25";
-  } else if (key === "release_radar") {
-    label = "RR";
-    title = "Release Radar";
-    className = "bg-blue-400/15 text-blue-200/90 border-blue-400/25";
-  } else if (key === "spotify") {
-    label = "Sync";
-    title = "Spotify sync";
-    className = "bg-emerald-400/15 text-emerald-200/90 border-emerald-400/25";
-  } else if (key === "upload") {
-    label = "Up";
-    title = "Upload";
-  }
-  return (
-    <span
-      title={title}
-      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${className}`}
-    >
-      {label}
-    </span>
+    <th className={`font-normal py-2 ${className}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={ariaLabel}
+        className={`inline-flex items-center gap-1 hover:text-white transition-colors ${
+          active ? "text-white" : "text-muted"
+        }`}
+      >
+        {children}
+        {active && <span className="text-[10px] opacity-80">{dir === "asc" ? "▲" : "▼"}</span>}
+      </button>
+    </th>
   );
 }
 

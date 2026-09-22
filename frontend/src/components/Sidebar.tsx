@@ -130,20 +130,20 @@ export function Sidebar() {
       : 0;
 
   return (
-    <aside className="w-[280px] shrink-0 flex flex-col rounded-lg bg-panel overflow-hidden">
-      <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <Link href="/library" className="flex items-center gap-2 text-muted hover:text-white font-bold text-base">
+    <aside className="w-[280px] shrink-0 flex flex-col rounded-lg bg-[#121212] overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 pt-4 pb-3">
+        <Link href="/library" className="flex items-center gap-2 text-white font-bold text-base hover:text-white">
           <LibraryIcon />
           Your Library
         </Link>
         <button
           type="button"
           onClick={() => setCreating((v) => !v)}
-          className="h-8 w-8 rounded-full text-muted hover:text-white hover:bg-white/10 flex items-center justify-center"
+          className="h-8 px-3 rounded-full bg-white/10 hover:bg-white/15 text-white text-sm font-semibold flex items-center gap-1.5"
           aria-label="Create playlist"
-          title="Create playlist"
         >
           <PlusIcon />
+          Create
         </button>
       </div>
 
@@ -171,9 +171,9 @@ export function Sidebar() {
         </FilterPill>
       </div>
 
-      <div className="px-3 pb-2">
-        <label className="relative block">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted">
+      <div className="px-3 pb-2 flex items-center justify-between gap-2">
+        <label className="relative flex-1 min-w-0">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted">
             <MiniSearch />
           </span>
           <input
@@ -183,6 +183,10 @@ export function Sidebar() {
             className="w-full bg-transparent hover:bg-white/5 focus:bg-[#242424] rounded-md pl-8 pr-2 py-1.5 text-xs text-white placeholder:text-muted outline-none"
           />
         </label>
+        <span className="text-xs text-muted shrink-0 flex items-center gap-1 pr-1">
+          Recents
+          <ListIcon />
+        </span>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
@@ -222,10 +226,15 @@ export function Sidebar() {
                     )}
                   </span>
                   <span className="min-w-0">
-                    <span className={`block truncate text-sm font-medium ${active ? "text-spotify" : "text-white"}`}>
+                    <span
+                      className={`block truncate text-sm font-medium ${
+                        active || p.is_liked_songs ? "text-spotify" : "text-white"
+                      }`}
+                    >
                       {p.name}
                     </span>
                     <span className="block truncate text-xs text-muted">
+                      {p.is_liked_songs && <PinIcon />}
                       Playlist · {p.track_count} song{p.track_count === 1 ? "" : "s"}
                     </span>
                   </span>
@@ -327,7 +336,7 @@ function LibraryIcon() {
 
 function PlusIcon() {
   return (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="currentColor" aria-hidden>
+    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor" aria-hidden>
       <path d="M8 1.5a.75.75 0 0 1 .75.75V7.5h5.25a.75.75 0 0 1 0 1.5H8.75v5.25a.75.75 0 0 1-1.5 0V9H2a.75.75 0 0 1 0-1.5h5.25V2.25A.75.75 0 0 1 8 1.5z" />
     </svg>
   );
@@ -337,6 +346,22 @@ function MiniSearch() {
   return (
     <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor" aria-hidden>
       <path d="M7 1a6 6 0 1 0 3.76 10.7l3.27 3.27a.75.75 0 1 0 1.06-1.06l-3.27-3.27A6 6 0 0 0 7 1zM2.5 7a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0z" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor" aria-hidden>
+      <path d="M1 3.5a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13a.5.5 0 0 1-.5-.5z" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-3 h-3 inline-block mr-1 text-spotify align-[-1px]" fill="currentColor" aria-hidden>
+      <path d="M8.86 1.5a.75.75 0 0 0-1.72 0l-.4 2.4-2.2.73a.75.75 0 0 0-.3 1.25l1.75 1.75-2.2 4.4 4.4-2.2 1.75 1.75a.75.75 0 0 0 1.25-.3l.73-2.2 2.4-.4a.75.75 0 0 0 0-1.72l-2.4-.4-.73-2.2a.75.75 0 0 0-1.25-.3L8.86 1.5z" />
     </svg>
   );
 }

@@ -40,7 +40,7 @@ function injectButton() {
   const btn = document.createElement("button");
   btn.id = "resonance-save-btn";
   btn.type = "button";
-  btn.textContent = "Save to Resonance";
+  btn.textContent = "Save to Media player";
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -106,7 +106,7 @@ async function loadPlaylists(backdrop) {
   const sel = backdrop.querySelector("#rs-dest");
   const cfg = await getConfig();
   if (!cfg.accessToken) {
-    hint.textContent = "Extension not connected — open Options → Extension connect.";
+    hint.textContent = "Extension not connected. Open Options / Extension connect.";
     hint.style.color = "#f87171";
     return;
   }
@@ -119,7 +119,7 @@ async function loadPlaylists(backdrop) {
         typeof res.data?.detail === "string"
           ? res.data.detail
           : res.status === 401
-            ? "Session expired — reconnect the extension"
+            ? "Session expired. Reconnect the extension"
             : `Could not load playlists (HTTP ${res.status})`;
       hint.textContent = detail;
       hint.style.color = "#f87171";
@@ -140,7 +140,7 @@ async function loadPlaylists(backdrop) {
       sel.appendChild(opt);
     });
     if (custom.length === 0) {
-      hint.textContent = "No custom playlists yet — create one in Your Library.";
+      hint.textContent = "No custom playlists yet. Create one in Your Library.";
       hint.style.color = "#b3b3b3";
     } else {
       hint.textContent = `${custom.length} playlist${custom.length === 1 ? "" : "s"} available`;
@@ -187,7 +187,7 @@ async function submitDownload(backdrop, url) {
             : res.data?.detail || `HTTP ${res.status}`;
       throw new Error(msg || "Failed");
     }
-    status.textContent = "Queued — open Downloads in the web app to watch progress";
+    status.textContent = "Queued. Open Downloads in the web app to watch progress";
     status.style.color = "#1db954";
     if (cfg.webBase) {
       const link = document.createElement("a");

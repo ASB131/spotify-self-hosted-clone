@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -53,40 +54,53 @@ export function TopBar() {
   }
 
   const initial = (me?.display_name || "U").charAt(0).toUpperCase();
+  const homeActive = pathname === "/";
 
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-2 px-4 py-3 bg-gradient-to-b from-[#121212] to-[#121212]/80">
-      <form
-        onSubmit={search}
-        className="flex-1 max-w-xl flex items-center bg-[#242424] hover:bg-[#2a2a2a] focus-within:bg-[#2a2a2a] rounded-full h-12 overflow-hidden ring-0 focus-within:ring-2 focus-within:ring-white"
-      >
+    <header className="shrink-0 h-16 flex items-center gap-3 px-4 bg-black z-30">
+      <Link href="/" className="shrink-0 flex items-center" aria-label="Media player home">
+        <Image src="/logo.png" alt="Media player" width={36} height={36} className="rounded-full" priority />
+      </Link>
+
+      <div className="flex-1 flex items-center justify-center gap-2 min-w-0 max-w-2xl mx-auto">
         <Link
           href="/"
-          className={`h-12 w-12 shrink-0 flex items-center justify-center ${
-            pathname === "/" ? "text-white" : "text-muted hover:text-white"
+          className={`h-12 w-12 shrink-0 rounded-full flex items-center justify-center transition-colors ${
+            homeActive ? "bg-[#282828] text-white" : "bg-[#242424] text-muted hover:text-white hover:bg-[#2a2a2a]"
           }`}
           aria-label="Home"
-          onClick={(e) => e.stopPropagation()}
         >
           <HomeIcon />
         </Link>
-        <span className="w-px h-6 bg-white/20" />
-        <span className="pl-3 text-muted">
-          <SearchIcon />
-        </span>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="What do you want to play?"
-          className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder:text-muted outline-none"
-        />
-      </form>
+        <form
+          onSubmit={search}
+          className="flex-1 min-w-0 flex items-center bg-[#242424] hover:bg-[#2a2a2a] focus-within:bg-[#2a2a2a] rounded-full h-12 overflow-hidden focus-within:ring-2 focus-within:ring-white"
+        >
+          <span className="pl-4 text-white shrink-0">
+            <SearchIcon />
+          </span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="What do you want to play?"
+            className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder:text-muted outline-none min-w-0"
+          />
+          <Link
+            href="/library"
+            className="pr-4 text-muted hover:text-white shrink-0"
+            aria-label="Your Library"
+            title="Your Library"
+          >
+            <LibraryMiniIcon />
+          </Link>
+        </form>
+      </div>
 
-      <div className="relative ml-auto" ref={menuRef}>
+      <div className="relative shrink-0" ref={menuRef}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center hover:scale-105 transition-transform"
+          className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center hover:scale-105 transition-transform ring-2 ring-transparent hover:ring-white/20"
           aria-label="Account menu"
           aria-expanded={open}
         >
@@ -157,6 +171,14 @@ function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
       <path d="M10.533 1.279a7.933 7.933 0 0 1 7.932 7.932c0 1.977-.725 3.79-1.926 5.186l4.355 4.354a1 1 0 0 1-1.415 1.415l-4.354-4.355a7.904 7.904 0 0 1-5.186 1.926 7.933 7.933 0 0 1 0-15.866zm0 1.999a5.933 5.933 0 1 0 0 11.866 5.933 5.933 0 0 0 0-11.866z" />
+    </svg>
+  );
+}
+
+function LibraryMiniIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
+      <path d="M14.5 2.134a1 1 0 0 1 1 0l6 3.464a1 1 0 0 1 .5.866V21a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V3a1 1 0 0 1 .5-.866zM3 4a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
     </svg>
   );
 }

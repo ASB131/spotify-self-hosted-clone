@@ -33,14 +33,16 @@ export default function LibraryPage() {
 
   return (
     <>
-    <WebSocketBridge onRefresh={load} />
+      <WebSocketBridge onRefresh={load} />
       <h2 className="text-2xl font-bold mb-2">Your Library</h2>
-      <p className="text-sm text-muted mb-6">
-        Use the sidebar to open playlists, filter artists, or create a playlist with +.
-      </p>
+      <p className="text-sm text-muted mb-6">Playlists and every song in your library.</p>
 
       <h3 className="text-lg font-semibold mb-3">Playlists</h3>
-      <PlaylistGrid playlists={playlists} emptyMessage="No playlists yet — click + in the sidebar." />
+      <PlaylistGrid
+        playlists={playlists}
+        emptyMessage="No playlists yet. Use Create in the sidebar."
+        compact
+      />
 
       <h3 className="text-lg font-semibold mt-10 mb-3">All songs</h3>
       <TrackTable tracks={tracks} onChanged={load} onUpgrade={upgrade} emptyMessage="Your library is empty." />

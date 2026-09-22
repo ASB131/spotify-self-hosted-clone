@@ -8,12 +8,12 @@ import { QueuePanel } from "@/components/QueuePanel";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="h-screen bg-black text-white flex flex-col p-2 gap-2 overflow-hidden">
-      <div className="flex flex-1 min-h-0 gap-2">
+    <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
+      <TopBar />
+      <div className="flex flex-1 min-h-0 gap-2 px-2 pb-2">
         <Sidebar />
         <div className="flex-1 min-w-0 flex flex-col rounded-lg bg-surface overflow-hidden">
-          <TopBar />
-          <main className="flex-1 overflow-auto px-6 pb-4">{children}</main>
+          <main className="flex-1 overflow-auto px-6 pb-4 pt-4">{children}</main>
         </div>
       </div>
       <AudioPlayerBar />

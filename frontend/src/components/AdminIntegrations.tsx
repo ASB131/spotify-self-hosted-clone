@@ -60,7 +60,7 @@ export function AdminIntegrations() {
         <h3 className="font-semibold">YouTube cookies</h3>
         {cookies ? (
           <p className={`text-xs ${cookies.configured ? "text-spotify" : "text-muted"}`}>
-            Status: {cookies.configured ? `OK (${cookies.source})` : "No cookies — OK for most tracks"}
+            Status: {cookies.configured ? `OK (${cookies.source})` : "No cookies. OK for most tracks"}
           </p>
         ) : (
           <p className="text-xs text-muted">Loading…</p>

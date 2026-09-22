@@ -1,4 +1,4 @@
-# Pull-only deploy — no source tree, no local build.
+# Pull-only deploy: no source tree, no local build.
 # Images: ghcr.io/asb131/spotify-self-hosted-clone-{api,web}:main
 #
 # Quick start on a server:

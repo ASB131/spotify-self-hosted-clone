@@ -7,8 +7,6 @@ import { useWebSocket } from "@/lib/ws";
 
 type Job = {
   id: number;
-  celery_task_id?: string | null;
-  url: string;
   title?: string | null;
   artist?: string | null;
   audio_format: string;
@@ -43,7 +41,7 @@ export default function DownloadsPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const connected = useWebSocket((event, data) => {
+  const connected = useWebSocket((event) => {
     if (event === "download_progress" || event === "download_complete" || event === "download_failed") {
       load();
     }
@@ -53,21 +51,12 @@ export default function DownloadsPage() {
     setLive(connected);
   }, [connected]);
 
+  const active = jobs.filter((j) => j.status === "queued" || j.status === "running");
   const finished = jobs.filter((j) => j.status === "completed" || j.status === "failed");
 
   async function clearFinished() {
     try {
-      await api<{ removed: number }>("/api/v1/downloads/jobs?finished_only=true", { method: "DELETE" });
-      load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Clear failed");
-    }
-  }
-
-  async function clearAll() {
-    if (!window.confirm("Clear all download history including in-progress jobs?")) return;
-    try {
-      await api<{ removed: number }>("/api/v1/downloads/jobs?finished_only=false", { method: "DELETE" });
+      await api("/api/v1/downloads/jobs?finished_only=true", { method: "DELETE" });
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Clear failed");
@@ -75,76 +64,55 @@ export default function DownloadsPage() {
   }
 
   return (
-    <>
-    <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
-        <h1 className="text-2xl font-bold">Downloads</h1>
-        <div className="flex items-center gap-3">
-          <span className={`text-xs ${live ? "text-spotify" : "text-muted"}`}>
-            {live ? "Live updates connected" : "Reconnecting… (still polling every 4s)"}
-          </span>
-          {finished.length > 0 && (
-            <button type="button" onClick={clearFinished} className="text-xs bg-white/10 px-3 py-1.5 rounded-full">
-              Clear finished ({finished.length})
-            </button>
-          )}
-          {jobs.length > 0 && (
-            <button type="button" onClick={clearAll} className="text-xs text-red-400 underline">
-              Clear all
-            </button>
-          )}
+    <div className="max-w-2xl pb-8">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">Downloads</h1>
+          <p className="text-xs text-muted mt-0.5">
+            {live ? "Live updates on" : "Polling"} · from YouTube extension
+          </p>
         </div>
+        {finished.length > 0 && (
+          <button type="button" onClick={clearFinished} className="text-xs text-muted hover:text-white">
+            Clear finished
+          </button>
+        )}
       </div>
-      <p className="text-sm text-muted mb-6 max-w-2xl">
-        Progress for YouTube saves (extension or web) and Spotify sync queues. When a job reaches 100%, the track
-        appears in <Link href="/library" className="text-spotify underline">Your Library</Link>.
-      </p>
-      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-      {jobs.filter((j) => j.status === "queued" || j.status === "running").length > 0 && (
-        <p className="text-sm text-amber-200/90 mb-4">
-          {jobs.filter((j) => j.status === "queued" || j.status === "running").length} job(s) in progress
-        </p>
-      )}
+      {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
 
       {jobs.length === 0 ? (
-        <p className="text-muted text-sm">No downloads yet. Save a video from the Chrome extension to see progress here.</p>
+        <p className="text-sm text-muted">
+          No downloads yet. Use{" "}
+          <Link href="/extension/connect" className="text-spotify underline">
+            Extension connect
+          </Link>{" "}
+          and Save on YouTube.
+        </p>
       ) : (
-        <ul className="space-y-3 max-w-2xl">
-          {jobs.map((j) => (
-            <li key={j.id} className="bg-panel rounded-lg p-4">
-              <div className="flex justify-between gap-3 mb-1">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{j.title || j.url}</p>
-                  <p className="text-sm text-muted truncate">{j.artist || "—"}</p>
+        <ul className="space-y-2">
+          {[...active, ...finished.slice(0, 12)].map((j) => (
+            <li key={j.id} className="bg-panel/60 rounded-md px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-medium truncate">
+                  {j.title || "Untitled"}
+                  {j.artist ? <span className="text-muted font-normal"> · {j.artist}</span> : null}
+                </p>
+                <span className={`text-xs shrink-0 ${statusColor(j.status)}`}>{j.status}</span>
+              </div>
+              {(j.status === "queued" || j.status === "running") && (
+                <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-spotify rounded-full transition-[width]"
+                    style={{ width: `${Math.min(100, j.progress || 0)}%` }}
+                  />
                 </div>
-                <span className={`text-xs uppercase shrink-0 ${statusColor(j.status)}`}>{j.status}</span>
-              </div>
-              <p className="text-xs text-muted mb-2">{j.stage}</p>
-              <div className="h-2 bg-black/40 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 ${
-                    j.status === "failed" ? "bg-red-500" : "bg-spotify"
-                  }`}
-                  style={{ width: `${j.status === "failed" ? 100 : j.progress}%` }}
-                />
-              </div>
-              <div className="flex justify-between mt-1 text-xs text-muted">
-                <span>{j.progress}%</span>
-                <span className="uppercase">{j.audio_format}</span>
-              </div>
-              {j.error && <p className="text-xs text-red-400 mt-2 break-words">{j.error}</p>}
-              {j.track_id && (
-                <Link href="/library" className="text-xs text-spotify underline mt-2 inline-block">
-                  Open in library
-                </Link>
               )}
+              <p className="text-[11px] text-muted mt-1 truncate">{j.error || j.stage}</p>
             </li>
           ))}
         </ul>
       )}
-      <button type="button" onClick={load} className="mt-6 text-sm text-muted underline">
-        Refresh now
-      </button>
-    </>
+    </div>
   );
 }

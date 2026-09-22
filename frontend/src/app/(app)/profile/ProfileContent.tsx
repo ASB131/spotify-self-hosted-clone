@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { api, downloadBlob, type Track } from "@/lib/api";
 import { TrackEditModal } from "@/components/TrackEditModal";
 import { WebSocketBridge } from "@/lib/ws";
@@ -35,7 +34,6 @@ function formatBytes(n: number) {
 }
 
 export default function ProfileContent() {
-  const searchParams = useSearchParams();
   const [stats, setStats] = useState<Stats | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [editing, setEditing] = useState<Track | null>(null);
@@ -61,7 +59,7 @@ export default function ProfileContent() {
 
   useEffect(() => {
     load();
-  }, [searchParams]);
+  }, []);
 
   async function installChromeExtension() {
     setExtMsg(null);
@@ -70,26 +68,13 @@ export default function ProfileContent() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "resonance-chrome-extension.zip";
+      a.download = "media-player-chrome-extension.zip";
       a.click();
       URL.revokeObjectURL(url);
       window.open("/extension/install", "_blank", "noopener,noreferrer");
       setExtMsg("Extension downloaded. Open Extension connect to copy your token.");
     } catch (e) {
       setExtMsg(e instanceof Error ? e.message : "Could not download extension");
-    }
-  }
-
-  async function convert(track: Track, format: "mp3" | "flac") {
-    try {
-      await api(`/api/v1/tracks/${track.id}/convert`, {
-        method: "POST",
-        body: JSON.stringify({ format }),
-      });
-      setBanner(`Converting “${track.title}” to ${format.toUpperCase()}…`);
-      setTimeout(load, 5000);
-    } catch (e) {
-      setBanner(e instanceof Error ? e.message : "Convert failed");
     }
   }
 
@@ -128,181 +113,29 @@ export default function ProfileContent() {
   return (
     <>
       <WebSocketBridge onRefresh={load} />
-      <h2 className="text-2xl font-bold mb-2">Profile</h2>
-      <Link href="/setup-guide" className="text-sm text-spotify underline mb-4 inline-block">
-        Open full setup guide →
+      <h2 className="text-2xl font-bold mb-1">Profile</h2>
+      <Link href="/setup-guide" className="text-sm text-muted hover:text-white mb-6 inline-block">
+        Setup guide
       </Link>
       {banner && <p className="text-sm text-spotify mb-4">{banner}</p>}
 
       {stats && (
-        <div className="grid gap-3 max-w-md mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-2xl mb-8">
           <Stat label="Tracks" value={String(stats.tracks_count)} />
           <Stat label="Playlists" value={String(stats.playlists_count)} />
-          <Stat label="Storage used" value={formatBytes(stats.storage_used_bytes)} />
-          <Stat label="Storage quota" value={formatBytes(stats.storage_quota_bytes)} />
+          <Stat label="Used" value={formatBytes(stats.storage_used_bytes)} />
+          <Stat label="Quota" value={formatBytes(stats.storage_quota_bytes)} />
         </div>
       )}
 
-      <section className="mb-10 max-w-2xl">
-        <h3 className="font-semibold text-lg mb-1">Artists with &amp;</h3>
-        <p className="text-sm text-muted mb-4">
-          Some names are one act (W&amp;W, D-Block &amp; S-te-Fan). Collaborations should split
-          (Steve Aoki &amp; Sub Zero Project → two artists). Keep the ones that should stay together.
-        </p>
-
-        {ampRules && ampRules.candidates.length > 0 && (
-          <div className="mb-4">
-            <h4 className="text-xs uppercase tracking-wider text-muted mb-2">Suggested — keep as one?</h4>
-            <ul className="space-y-2">
-              {ampRules.candidates.map((c) => (
-                <li
-                  key={c.normalized_name}
-                  className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{c.display_name}</p>
-                    <p className="text-xs text-muted">
-                      {c.track_count} track{c.track_count === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={ampBusy}
-                    onClick={() => keepArtist(c.display_name)}
-                    className="shrink-0 text-xs font-semibold bg-spotify text-black px-3 py-1.5 rounded-full disabled:opacity-50"
-                  >
-                    Keep as one
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="mb-4">
-          <h4 className="text-xs uppercase tracking-wider text-muted mb-2">Kept as one artist</h4>
-          <ul className="space-y-2">
-            {(ampRules?.kept || []).map((k) => (
-              <li
-                key={`${k.source}-${k.normalized_name}`}
-                className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{k.display_name}</p>
-                  <p className="text-xs text-muted">
-                    {k.source === "builtin" ? "Built-in" : "Your rule"}
-                    {k.track_count ? ` · ${k.track_count} tracks` : ""}
-                  </p>
-                </div>
-                {k.source === "user" && k.id != null ? (
-                  <button
-                    type="button"
-                    disabled={ampBusy}
-                    onClick={() => unkeepArtist(k.id!)}
-                    className="shrink-0 text-xs text-muted hover:text-white disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                ) : (
-                  <span className="text-xs text-muted shrink-0">Locked</span>
-                )}
-              </li>
-            ))}
-            {(!ampRules || ampRules.kept.length === 0) && (
-              <li className="text-sm text-muted px-1">No keep rules yet.</li>
-            )}
-          </ul>
-        </div>
-
-        <form
-          className="flex flex-wrap gap-2 items-center"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (customKeep.trim()) void keepArtist(customKeep.trim());
-          }}
-        >
-          <input
-            value={customKeep}
-            onChange={(e) => setCustomKeep(e.target.value)}
-            placeholder="e.g. Showtek & Noisecontrollers"
-            className="flex-1 min-w-[12rem] bg-black/30 border border-white/10 rounded-md px-3 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={ampBusy || !customKeep.trim()}
-            className="text-sm font-semibold bg-white/10 px-4 py-2 rounded-full disabled:opacity-50"
-          >
-            Add keep rule
-          </button>
-        </form>
-      </section>
-
-      <section className="mb-10">
-        <h3 className="font-semibold text-lg mb-3">Library storage</h3>
-        <p className="text-sm text-muted mb-3">Songs on this account, space used, and format conversion.</p>
-        <div className="rounded-lg border border-white/10 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-white/5 text-muted text-xs uppercase tracking-wider">
-              <tr>
-                <th className="text-left font-normal px-3 py-2">Title</th>
-                <th className="text-left font-normal px-3 py-2 w-16">Format</th>
-                <th className="text-right font-normal px-3 py-2 w-24">Size</th>
-                <th className="text-right font-normal px-3 py-2 w-40">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tracks.map((t) => {
-                const fmt = (t.format || "mp3").toLowerCase();
-                const other = fmt === "flac" ? "mp3" : "flac";
-                return (
-                  <tr key={t.id} className="border-t border-white/5 hover:bg-white/[0.04]">
-                    <td className="px-3 py-2 min-w-0">
-                      <p className="truncate font-medium">{t.title}</p>
-                      <p className="truncate text-xs text-muted">{t.artist}</p>
-                    </td>
-                    <td className="px-3 py-2 uppercase text-xs font-semibold">{fmt}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted">
-                      {formatBytes(t.file_size_bytes || 0)}
-                    </td>
-                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setEditing(t)}
-                        className="text-xs text-muted hover:text-white"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => convert(t, other as "mp3" | "flac")}
-                        className="text-xs text-spotify hover:underline"
-                      >
-                        → {other.toUpperCase()}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {tracks.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-3 py-6 text-muted text-sm">
-                    No songs in your library yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg">
+      <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg border border-white/5">
         <h3 className="font-semibold">Chrome extension</h3>
         <p className="text-sm text-muted">
-          Download the extension, load it in Chrome, then use{" "}
+          Add music from YouTube. Download, load unpacked, then{" "}
           <Link href="/extension/connect" className="text-spotify underline">
-            Extension connect
-          </Link>{" "}
-          to copy API URL and token (no DevTools needed).
+            connect
+          </Link>
+          .
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -313,11 +146,101 @@ export default function ProfileContent() {
             Download extension
           </button>
           <Link href="/extension/connect" className="bg-white/10 px-4 py-2 rounded-full font-semibold text-sm">
-            Copy API token
+            Connect
           </Link>
         </div>
         {extMsg && <p className="text-sm text-spotify">{extMsg}</p>}
       </section>
+
+      <section className="mb-8 max-w-2xl">
+        <h3 className="font-semibold text-lg mb-1">Artists with &amp;</h3>
+        <p className="text-sm text-muted mb-4">
+          Keep acts like W&amp;W as one artist. Collaborations still split.
+        </p>
+
+        {ampRules && ampRules.candidates.length > 0 && (
+          <ul className="space-y-2 mb-4">
+            {ampRules.candidates.map((c) => (
+              <li
+                key={c.normalized_name}
+                className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{c.display_name}</p>
+                  <p className="text-xs text-muted">{c.track_count} tracks</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={ampBusy}
+                  onClick={() => keepArtist(c.display_name)}
+                  className="shrink-0 text-xs font-semibold bg-spotify text-black px-3 py-1.5 rounded-full disabled:opacity-50"
+                >
+                  Keep as one
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <ul className="space-y-2 mb-3">
+          {(ampRules?.kept || []).map((k) => (
+            <li
+              key={`${k.source}-${k.normalized_name}`}
+              className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
+            >
+              <p className="font-medium truncate">{k.display_name}</p>
+              {k.source === "user" && k.id != null ? (
+                <button
+                  type="button"
+                  disabled={ampBusy}
+                  onClick={() => unkeepArtist(k.id!)}
+                  className="text-xs text-muted hover:text-white"
+                >
+                  Remove
+                </button>
+              ) : (
+                <span className="text-xs text-muted">Built-in</span>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (customKeep.trim()) void keepArtist(customKeep.trim());
+          }}
+        >
+          <input
+            value={customKeep}
+            onChange={(e) => setCustomKeep(e.target.value)}
+            placeholder="Add keep rule"
+            className="flex-1 min-w-[12rem] bg-[#242424] rounded-md px-3 py-2 text-sm outline-none"
+          />
+          <button type="submit" disabled={ampBusy} className="text-sm text-spotify font-semibold px-3">
+            Add
+          </button>
+        </form>
+      </section>
+
+      {tracks.length > 0 && (
+        <section className="max-w-2xl">
+          <h3 className="font-semibold mb-2">Recent library edits</h3>
+          <ul className="text-sm space-y-1">
+            {tracks.slice(0, 8).map((t) => (
+              <li key={t.id} className="flex justify-between gap-2 py-1 border-b border-white/5">
+                <span className="truncate">
+                  {t.title} <span className="text-muted">· {t.artist}</span>
+                </span>
+                <button type="button" className="text-xs text-muted hover:text-white" onClick={() => setEditing(t)}>
+                  Edit
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={load} />
     </>
@@ -326,9 +249,9 @@ export default function ProfileContent() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-black/20 p-4 rounded-md flex justify-between">
-      <span className="text-muted">{label}</span>
-      <span className="font-semibold">{value}</span>
+    <div className="bg-panel rounded-md p-3 border border-white/5">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="font-semibold mt-0.5">{value}</p>
     </div>
   );
 }

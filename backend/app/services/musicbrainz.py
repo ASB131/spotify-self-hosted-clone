@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "ResonanceSelfHosted/1.0 (https://github.com/ASB131/spotify-self-hosted-clone)"
+USER_AGENT = "MediaPlayerSelfHosted/1.0.0 (https://github.com/ASB131/spotify-self-hosted-clone)"
 BASE = "https://musicbrainz.org/ws/2"
 _last_call = 0.0
 _MIN_INTERVAL = 1.05

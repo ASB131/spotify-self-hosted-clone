@@ -19,7 +19,7 @@ export function PlaylistGrid({ playlists, emptyMessage, compact }: Props) {
     <div
       className={`grid gap-3 ${
         compact
-          ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8"
+          ? "grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-2"
           : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
       }`}
     >

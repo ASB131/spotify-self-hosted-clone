@@ -8,6 +8,7 @@ import { WebSocketBridge } from "@/lib/ws";
 import { fetchSetupStatus } from "@/lib/setup";
 import { usePlayerStore } from "@/store/player";
 import { ArtistLinks } from "@/lib/artists";
+import { PlaylistGrid } from "@/components/PlaylistGrid";
 
 type RecentPlaylist = {
   id: number;
@@ -26,11 +27,18 @@ export default function HomePage() {
   const router = useRouter();
   const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
   const [data, setData] = useState<HomeData | null>(null);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
-    api<HomeData>("/api/v1/home")
-      .then(setData)
+    Promise.all([
+      api<HomeData>("/api/v1/home"),
+      api<Playlist[]>("/api/v1/playlists").catch(() => [] as Playlist[]),
+    ])
+      .then(([home, pls]) => {
+        setData(home);
+        setPlaylists(pls);
+      })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Failed to load home");
         if (String(e).includes("401") || String(e).toLowerCase().includes("unauthorized")) {
@@ -64,6 +72,20 @@ export default function HomePage() {
             <p className="text-sm text-muted mt-1">Your library and recent listens.</p>
           </header>
 
+          <section>
+            <div className="flex items-end justify-between mb-3">
+              <h2 className="text-xl font-bold">Your playlists</h2>
+              <Link href="/library" className="text-sm text-muted hover:text-white">
+                Show all
+              </Link>
+            </div>
+            <PlaylistGrid
+              playlists={playlists.slice(0, 10)}
+              emptyMessage="No playlists yet. Create one from Your Library."
+              compact
+            />
+          </section>
+
           {data.all_songs && (
             <section>
               <h2 className="text-xl font-bold mb-3">All Songs</h2>
@@ -87,7 +109,7 @@ export default function HomePage() {
           <section>
             <h2 className="text-xl font-bold mb-3">Recently played</h2>
             {data.recently_played_tracks.length === 0 && data.recently_played_playlists.length === 0 ? (
-              <p className="text-sm text-muted">Play something — it will show up here.</p>
+              <p className="text-sm text-muted">Play something. It will show up here.</p>
             ) : (
               <div className="flex gap-4 overflow-x-auto pb-2">
                 {data.recently_played_playlists.map((p) => (

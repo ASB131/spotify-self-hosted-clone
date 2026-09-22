@@ -57,7 +57,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
         audio_format=fmt,
         status=JobStatus.QUEUED,
         progress=0,
-        stage="Queued — waiting for worker",
+        stage="Queued: waiting for worker",
         added_via=body.added_via or "extension",
     )
     db.add(job)

@@ -237,7 +237,11 @@ def playlist_tracks(playlist_id: int, user: User = Depends(get_current_user), db
     )
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    ordered = sorted(pl.tracks, key=lambda x: x.position)
+    ordered = sorted(
+        pl.tracks,
+        key=lambda x: (x.added_at is not None, x.added_at or x.position),
+        reverse=True,
+    )
     via_map = {
         ut.track_id: ut.added_via
         for ut in db.scalars(select(UserTrack).where(UserTrack.user_id == user.id)).all()

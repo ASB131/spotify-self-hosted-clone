@@ -11,8 +11,12 @@ const sans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Resonance — Self-Hosted Music",
-  description: "Self-hosted Spotify-style streaming",
+  title: "Media player",
+  description: "Self-hosted music library and player",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

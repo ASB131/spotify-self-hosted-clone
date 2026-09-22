@@ -32,8 +32,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-md bg-panel p-8 rounded-lg space-y-4">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-black">
+      <form onSubmit={submit} className="w-full max-w-md bg-[#121212] p-8 rounded-lg space-y-4 border border-white/5">
         <h1 className="text-2xl font-bold">Register</h1>
         {error && <p className="text-red-400 text-sm">{error}</p>}
         {(["email", "display_name", "password", "invite_code"] as const).map((key) => (

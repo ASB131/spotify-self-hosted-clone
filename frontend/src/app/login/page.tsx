@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -45,18 +46,19 @@ export default function LoginPage() {
 
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-muted">
-        Checking server…
-      </div>
+      <div className="min-h-screen flex items-center justify-center bg-black text-muted">Checking server…</div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-md bg-panel p-8 rounded-lg space-y-4">
-        <h1 className="text-2xl font-bold">Log in</h1>
-        <p className="text-sm text-muted">
-          First time on this server? If no admin exists yet, you will be sent to{" "}
+    <div className="min-h-screen flex items-center justify-center p-6 bg-black">
+      <form onSubmit={submit} className="w-full max-w-md bg-[#121212] p-8 rounded-lg space-y-4 border border-white/5">
+        <div className="flex flex-col items-center gap-3 mb-2">
+          <Image src="/logo.png" alt="Media player" width={72} height={72} className="rounded-full" priority />
+          <h1 className="text-2xl font-bold text-white">Media player</h1>
+        </div>
+        <p className="text-sm text-muted text-center">
+          First time? If no admin exists yet, go to{" "}
           <Link href="/setup" className="text-spotify underline">
             admin setup
           </Link>
@@ -64,7 +66,7 @@ export default function LoginPage() {
         </p>
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <input
-          className="w-full bg-black/30 rounded px-3 py-2"
+          className="w-full bg-[#242424] rounded-md px-3 py-2.5 text-white outline-none focus:ring-1 focus:ring-white"
           type="email"
           placeholder="Email"
           value={email}
@@ -72,17 +74,17 @@ export default function LoginPage() {
           required
         />
         <input
-          className="w-full bg-black/30 rounded px-3 py-2"
+          className="w-full bg-[#242424] rounded-md px-3 py-2.5 text-white outline-none focus:ring-1 focus:ring-white"
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <button type="submit" className="w-full bg-spotify text-black font-semibold py-2 rounded-full">
+        <button type="submit" className="w-full bg-spotify text-black font-semibold py-2.5 rounded-full">
           Log in
         </button>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-muted text-center">
           Have an invite?{" "}
           <Link href="/register" className="text-spotify underline">
             Register

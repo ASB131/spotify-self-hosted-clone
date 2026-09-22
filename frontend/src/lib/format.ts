@@ -1,15 +1,20 @@
 export function formatDuration(seconds?: number | null): string {
-  if (seconds == null || Number.isNaN(seconds)) return "—";
+  if (seconds == null || Number.isNaN(seconds)) return "-";
   const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
   const r = s % 60;
-  return `${m}:${r.toString().padStart(2, "0")}`;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${r.toString().padStart(2, "0")}`;
+  }
+  // Zero-pad minutes so 03:48 lines up with 44:49 in the duration column.
+  return `${m.toString().padStart(2, "0")}:${r.toString().padStart(2, "0")}`;
 }
 
 export function formatRelativeDate(iso?: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
+  if (Number.isNaN(then)) return "-";
   const diffMs = Date.now() - then;
   const sec = Math.floor(diffMs / 1000);
   if (sec < 60) return "Just now";
