@@ -119,6 +119,8 @@ export function TrackTable({
               <th className="w-12 font-normal text-right pr-4 py-2">#</th>
               <th className="font-normal text-left py-2">Title</th>
               <th className="font-normal text-left py-2 hidden md:table-cell w-14" aria-label="Source" />
+              <th className="font-normal text-left py-2 hidden lg:table-cell w-14" aria-label="Quality" />
+              <th className="font-normal text-left py-2 hidden lg:table-cell w-14" aria-label="Added via" />
               <th className="font-normal text-left py-2 hidden md:table-cell w-36">Date added</th>
               <th className="font-normal text-right py-2 w-24 pr-2" aria-label="Duration">
                 <ClockIcon />
@@ -172,6 +174,12 @@ export function TrackTable({
                   </td>
                   <td className="py-2 hidden md:table-cell w-14 align-middle">
                     <SourceBadge source={t.source} />
+                  </td>
+                  <td className="py-2 hidden lg:table-cell w-14 align-middle">
+                    <FormatBadge format={t.format} />
+                  </td>
+                  <td className="py-2 hidden lg:table-cell w-14 align-middle">
+                    <ViaBadge via={t.added_via} />
                   </td>
                   <td className="py-2 text-muted hidden md:table-cell text-sm">
                     {formatRelativeDate(t.added_at)}
@@ -227,9 +235,72 @@ function SourceBadge({ source }: { source?: string | null }) {
     className = "bg-emerald-400/15 text-emerald-300/90 border-emerald-400/25";
   } else if (key === "upload") {
     label = "Up";
+  } else if (key === "lidarr") {
+    label = "LD";
+    className = "bg-sky-400/15 text-sky-200/90 border-sky-400/25";
   }
   const title =
-    key === "youtube" ? "YouTube" : key === "spotify" ? "Spotify" : key === "upload" ? "Upload" : "Other source";
+    key === "youtube"
+      ? "YouTube"
+      : key === "spotify"
+        ? "Spotify"
+        : key === "upload"
+          ? "Upload"
+          : key === "lidarr"
+            ? "Lidarr"
+            : "Other source";
+  return (
+    <span
+      title={title}
+      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function FormatBadge({ format }: { format?: string | null }) {
+  const key = (format || "mp3").toLowerCase();
+  const isFlac = key === "flac";
+  return (
+    <span
+      title={isFlac ? "FLAC" : "MP3"}
+      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${
+        isFlac
+          ? "bg-violet-400/15 text-violet-200/90 border-violet-400/25"
+          : "bg-white/10 text-white/70 border-white/15"
+      }`}
+    >
+      {isFlac ? "FL" : "MP3"}
+    </span>
+  );
+}
+
+function ViaBadge({ via }: { via?: string | null }) {
+  const key = (via || "library").toLowerCase();
+  let label = "Lib";
+  let title = "Library";
+  let className = "bg-white/10 text-white/70 border-white/15";
+  if (key === "extension") {
+    label = "Ext";
+    title = "Chrome extension";
+    className = "bg-orange-400/15 text-orange-200/90 border-orange-400/25";
+  } else if (key === "discover_weekly") {
+    label = "DW";
+    title = "Discover Weekly";
+    className = "bg-rose-400/15 text-rose-200/90 border-rose-400/25";
+  } else if (key === "release_radar") {
+    label = "RR";
+    title = "Release Radar";
+    className = "bg-blue-400/15 text-blue-200/90 border-blue-400/25";
+  } else if (key === "spotify") {
+    label = "Sync";
+    title = "Spotify sync";
+    className = "bg-emerald-400/15 text-emerald-200/90 border-emerald-400/25";
+  } else if (key === "upload") {
+    label = "Up";
+    title = "Upload";
+  }
   return (
     <span
       title={title}

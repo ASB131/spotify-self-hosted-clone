@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,6 +24,8 @@ class UserTrack(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # library | extension | spotify | discover_weekly | release_radar | upload
+    added_via: Mapped[str] = mapped_column(String(32), nullable=False, default="library")
 
     user: Mapped["User"] = relationship(back_populates="user_tracks")
     track: Mapped["Track"] = relationship(back_populates="user_tracks")

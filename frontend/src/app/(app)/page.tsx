@@ -189,16 +189,21 @@ function MadeForYouCard({ playlist, accent }: { playlist: DiscoveryPlaylist; acc
       >
         <div className="grid grid-cols-2 grid-rows-2 w-28 h-28 rounded overflow-hidden shrink-0 bg-black/40">
           {preview.length
-            ? preview.map((i) =>
-                i.art_url ? (
+            ? preview.map((i) => {
+                const src = i.art_url?.startsWith("http")
+                  ? i.art_url
+                  : i.art_url
+                    ? `${getApiUrl()}${i.art_url}`
+                    : null;
+                return src ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={i.id} src={`${getApiUrl()}${i.art_url}`} alt="" className="w-full h-full object-cover" />
+                  <img key={i.id} src={src} alt="" className="w-full h-full object-cover" />
                 ) : (
                   <span key={i.id} className="bg-white/5 flex items-center justify-center text-xs text-muted">
                     ♪
                   </span>
-                )
-              )
+                );
+              })
             : (
               <span className="col-span-2 row-span-2 flex items-center justify-center text-muted text-2xl">♪</span>
             )}

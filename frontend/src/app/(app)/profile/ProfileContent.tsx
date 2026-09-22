@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { api, downloadBlob, getOAuthApiUrl } from "@/lib/api";
+import { api, downloadBlob, getOAuthApiUrl, type Track } from "@/lib/api";
+import { TrackEditModal } from "@/components/TrackEditModal";
+import { WebSocketBridge } from "@/lib/ws";
 
 type Stats = {
   tracks_count: number;
@@ -27,15 +29,22 @@ export default function ProfileContent() {
   const searchParams = useSearchParams();
   const [stats, setStats] = useState<Stats | null>(null);
   const [checklist, setChecklist] = useState<Checklist | null>(null);
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [editing, setEditing] = useState<Track | null>(null);
   const [extMsg, setExtMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+
+  const load = () => {
+    api<Stats>("/api/v1/auth/me/stats").then(setStats);
+    api<Checklist>("/api/v1/setup/checklist").then(setChecklist);
+    api<Track[]>("/api/v1/tracks").then(setTracks).catch(() => setTracks([]));
+  };
 
   useEffect(() => {
     if (searchParams.get("spotify") === "connected") {
       setBanner("Spotify account linked. Liked songs sync runs hourly.");
     }
-    api<Stats>("/api/v1/auth/me/stats").then(setStats);
-    api<Checklist>("/api/v1/setup/checklist").then(setChecklist);
+    load();
   }, [searchParams]);
 
   async function installChromeExtension() {
@@ -55,9 +64,23 @@ export default function ProfileContent() {
     }
   }
 
+  async function convert(track: Track, format: "mp3" | "flac") {
+    try {
+      await api(`/api/v1/tracks/${track.id}/convert`, {
+        method: "POST",
+        body: JSON.stringify({ format }),
+      });
+      setBanner(`Converting “${track.title}” to ${format.toUpperCase()}…`);
+      setTimeout(load, 5000);
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : "Convert failed");
+    }
+  }
+
   return (
     <>
-    <h2 className="text-2xl font-bold mb-2">Profile</h2>
+      <WebSocketBridge onRefresh={load} />
+      <h2 className="text-2xl font-bold mb-2">Profile</h2>
       <Link href="/setup-guide" className="text-sm text-spotify underline mb-4 inline-block">
         Open full setup guide →
       </Link>
@@ -72,6 +95,64 @@ export default function ProfileContent() {
         </div>
       )}
 
+      <section className="mb-10">
+        <h3 className="font-semibold text-lg mb-3">Library storage</h3>
+        <p className="text-sm text-muted mb-3">Songs on this account, space used, and format conversion.</p>
+        <div className="rounded-lg border border-white/10 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-muted text-xs uppercase tracking-wider">
+              <tr>
+                <th className="text-left font-normal px-3 py-2">Title</th>
+                <th className="text-left font-normal px-3 py-2 w-16">Format</th>
+                <th className="text-right font-normal px-3 py-2 w-24">Size</th>
+                <th className="text-right font-normal px-3 py-2 w-40">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tracks.map((t) => {
+                const fmt = (t.format || "mp3").toLowerCase();
+                const other = fmt === "flac" ? "mp3" : "flac";
+                return (
+                  <tr key={t.id} className="border-t border-white/5 hover:bg-white/[0.04]">
+                    <td className="px-3 py-2 min-w-0">
+                      <p className="truncate font-medium">{t.title}</p>
+                      <p className="truncate text-xs text-muted">{t.artist}</p>
+                    </td>
+                    <td className="px-3 py-2 uppercase text-xs font-semibold">{fmt}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {formatBytes(t.file_size_bytes || 0)}
+                    </td>
+                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(t)}
+                        className="text-xs text-muted hover:text-white"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => convert(t, other as "mp3" | "flac")}
+                        className="text-xs text-spotify hover:underline"
+                      >
+                        → {other.toUpperCase()}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {tracks.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-6 text-muted text-sm">
+                    No songs in your library yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg">
         <h3 className="font-semibold">Chrome extension</h3>
         <p className="text-sm text-muted">
@@ -82,7 +163,11 @@ export default function ProfileContent() {
           to copy API URL and token (no DevTools needed).
         </p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={installChromeExtension} className="bg-spotify text-black px-4 py-2 rounded-full font-semibold text-sm">
+          <button
+            type="button"
+            onClick={installChromeExtension}
+            className="bg-spotify text-black px-4 py-2 rounded-full font-semibold text-sm"
+          >
             Download extension
           </button>
           <Link href="/extension/connect" className="bg-white/10 px-4 py-2 rounded-full font-semibold text-sm">
@@ -116,6 +201,8 @@ export default function ProfileContent() {
           </a>
         )}
       </section>
+
+      <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={load} />
     </>
   );
 }

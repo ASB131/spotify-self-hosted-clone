@@ -58,6 +58,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
         status=JobStatus.QUEUED,
         progress=0,
         stage="Queued — waiting for worker",
+        added_via=body.added_via or "extension",
     )
     db.add(job)
     db.commit()
@@ -72,6 +73,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
         playlist_id=body.playlist_id,
         add_to_liked=body.add_to_liked,
         job_id=job.id,
+        added_via=body.added_via or "extension",
     )
     job.celery_task_id = task.id
     db.add(job)

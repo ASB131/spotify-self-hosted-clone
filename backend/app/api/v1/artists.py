@@ -31,7 +31,7 @@ def _cover(p) -> str | None:
     return f"/api/v1/playlists/{p.id}/cover" if getattr(p, "cover_relative_path", None) else None
 
 
-def _track_public(track: Track, added_at=None) -> TrackPublic:
+def _track_public(track: Track, added_at=None, added_via=None) -> TrackPublic:
     return TrackPublic(
         id=track.id,
         title=track.title,
@@ -41,6 +41,7 @@ def _track_public(track: Track, added_at=None) -> TrackPublic:
         format=track.format.value,
         file_size_bytes=track.file_size_bytes,
         source=track.source.value if hasattr(track.source, "value") else str(track.source),
+        added_via=added_via,
         art_url=f"/api/v1/tracks/{track.id}/art" if track.art_relative_path else None,
         added_at=added_at,
     )
@@ -57,19 +58,21 @@ def get_artist(
         raise HTTPException(status_code=400, detail="Invalid artist name")
 
     rows = db.execute(
-        select(Track, UserTrack.added_at)
+        select(Track, UserTrack.added_at, UserTrack.added_via)
         .join(UserTrack, UserTrack.track_id == Track.id)
         .where(UserTrack.user_id == user.id)
         .order_by(Track.title)
     ).all()
 
-    matched: list[tuple[Track, object]] = [
-        (track, added_at) for track, added_at in rows if track_has_artist(track.artist, name)
+    matched: list[tuple[Track, object, str | None]] = [
+        (track, added_at, added_via)
+        for track, added_at, added_via in rows
+        if track_has_artist(track.artist, name)
     ]
     if not matched:
         raise HTTPException(status_code=404, detail="Artist not found in your library")
 
-    track_ids = {t.id for t, _ in matched}
+    track_ids = {t.id for t, _, _ in matched}
     playlists = db.scalars(
         select(Playlist)
         .where(Playlist.user_id == user.id)
@@ -90,15 +93,15 @@ def get_artist(
     ]
 
     arts: list[str] = []
-    for t, _ in matched:
+    for t, _, _ in matched:
         if t.art_relative_path:
             arts.append(f"/api/v1/tracks/{t.id}/art")
         if len(arts) >= 4:
             break
 
-    total = sum(t.duration_seconds or 0 for t, _ in matched)
+    total = sum(t.duration_seconds or 0 for t, _, _ in matched)
     display = name
-    for t, _ in matched:
+    for t, _, _ in matched:
         for part in split_artists(t.artist):
             if part.lower() == name.lower():
                 display = part
@@ -106,7 +109,7 @@ def get_artist(
 
     return ArtistPage(
         name=display,
-        tracks=[_track_public(t, a) for t, a in matched],
+        tracks=[_track_public(t, a, v) for t, a, v in matched],
         playlists=in_playlists,
         total_duration_seconds=total,
         art_urls=arts,

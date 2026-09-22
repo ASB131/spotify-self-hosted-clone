@@ -38,7 +38,7 @@ def _playlist_public(p: Playlist) -> PlaylistPublic:
     )
 
 
-def _track_public_from_pt(pt: PlaylistTrack) -> TrackPublic:
+def _track_public_from_pt(pt: PlaylistTrack, added_via: str | None = None) -> TrackPublic:
     t = pt.track
     return TrackPublic(
         id=t.id,
@@ -49,6 +49,7 @@ def _track_public_from_pt(pt: PlaylistTrack) -> TrackPublic:
         format=t.format.value,
         file_size_bytes=t.file_size_bytes,
         source=t.source.value if hasattr(t.source, "value") else str(t.source),
+        added_via=added_via,
         art_url=f"/api/v1/tracks/{t.id}/art" if t.art_relative_path else None,
         added_at=pt.added_at,
     )
@@ -227,6 +228,8 @@ def playlist_cover(playlist_id: int, user: User = Depends(get_current_user), db:
 
 @router.get("/{playlist_id}/tracks", response_model=list[TrackPublic])
 def playlist_tracks(playlist_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.models.user_track import UserTrack
+
     pl = db.scalar(
         select(Playlist)
         .where(Playlist.id == playlist_id, Playlist.user_id == user.id)
@@ -235,7 +238,11 @@ def playlist_tracks(playlist_id: int, user: User = Depends(get_current_user), db
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
     ordered = sorted(pl.tracks, key=lambda x: x.position)
-    return [_track_public_from_pt(pt) for pt in ordered]
+    via_map = {
+        ut.track_id: ut.added_via
+        for ut in db.scalars(select(UserTrack).where(UserTrack.user_id == user.id)).all()
+    }
+    return [_track_public_from_pt(pt, via_map.get(pt.track_id)) for pt in ordered]
 
 
 @router.delete("/{playlist_id}")

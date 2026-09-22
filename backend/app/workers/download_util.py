@@ -167,9 +167,23 @@ def download_youtube_audio(
         "video_id": video_id,
         "title": title_override or info.get("track") or info.get("title") or "Unknown Title",
         "artist": artist_override or info.get("artist") or info.get("uploader") or "Unknown Artist",
-        "duration": info.get("duration"),
+        "duration": info.get("duration") or info.get("duration_string"),
         "webpage_url": info.get("webpage_url") or url,
     }
+    # Prefer accurate duration from the downloaded file
+    try:
+        if audio_format == "flac":
+            audio = FLAC(audio_path)
+            if audio.info and getattr(audio.info, "length", None):
+                meta["duration"] = int(audio.info.length)
+        else:
+            audio = MP3(audio_path)
+            if audio.info and getattr(audio.info, "length", None):
+                meta["duration"] = int(audio.info.length)
+    except Exception:
+        pass
+    if isinstance(meta.get("duration"), float):
+        meta["duration"] = int(meta["duration"])
     return meta, audio_path, thumb
 
 

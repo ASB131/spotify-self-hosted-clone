@@ -17,6 +17,7 @@ def get_or_link_track(
     *,
     playlist_id: int | None = None,
     add_to_liked: bool = True,
+    added_via: str = "library",
 ) -> UserTrack:
     """Link user to track; charge storage only on first link for this user."""
     user = db.get(User, user_id)
@@ -28,10 +29,13 @@ def get_or_link_track(
     )
     if existing:
         ut = existing
+        if added_via and added_via != "library" and (not ut.added_via or ut.added_via == "library"):
+            ut.added_via = added_via
+            db.add(ut)
     else:
         if user.storage_used_bytes + track.file_size_bytes > user.storage_quota_bytes:
             raise ValueError("Storage quota exceeded")
-        ut = UserTrack(user_id=user_id, track_id=track.id)
+        ut = UserTrack(user_id=user_id, track_id=track.id, added_via=added_via or "library")
         db.add(ut)
         adjust_user_storage(db, user_id, track.file_size_bytes)
 

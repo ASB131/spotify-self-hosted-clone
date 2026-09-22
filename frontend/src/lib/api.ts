@@ -7,6 +7,7 @@ export type Track = {
   format: string;
   file_size_bytes: number;
   source?: string | null;
+  added_via?: string | null;
   art_url?: string | null;
   added_at?: string | null;
 };

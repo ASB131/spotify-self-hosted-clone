@@ -51,6 +51,21 @@ def _fail_discovery_item(db, discovery_item_id: int | None, error: str) -> None:
     db.add(item)
 
 
+def _discovery_added_via(db, discovery_item_id: int | None) -> str:
+    if not discovery_item_id:
+        return "library"
+    from app.models.discovery import DiscoveryPlaylist
+
+    item = db.get(DiscoveryItem, discovery_item_id)
+    if not item:
+        return "library"
+    pl = db.get(DiscoveryPlaylist, item.playlist_id)
+    if not pl:
+        return "library"
+    kind = pl.kind.value if hasattr(pl.kind, "value") else str(pl.kind)
+    return kind
+
+
 @celery_app.task(name="app.workers.tasks.download_youtube_track", bind=True, max_retries=3)
 def download_youtube_track(
     self,
@@ -63,6 +78,7 @@ def download_youtube_track(
     add_to_liked: bool,
     job_id: int | None = None,
     discovery_item_id: int | None = None,
+    added_via: str | None = None,
 ):
     db = SessionLocal()
     tmp_dir = None
@@ -78,6 +94,8 @@ def download_youtube_track(
                 status=JobStatus.QUEUED,
                 progress=0,
                 stage="Queued",
+                discovery_item_id=discovery_item_id,
+                added_via=added_via,
             )
             db.add(job)
             db.commit()
@@ -91,6 +109,14 @@ def download_youtube_track(
                 db.commit()
             if job and discovery_item_id is None:
                 discovery_item_id = job.discovery_item_id
+            if job and not added_via:
+                added_via = job.added_via
+
+        via = (
+            _discovery_added_via(db, discovery_item_id)
+            if discovery_item_id
+            else (added_via or "library")
+        )
 
         update_job(db, job_id, status=JobStatus.RUNNING, progress=5, stage="Checking library…")
 
@@ -109,6 +135,7 @@ def download_youtube_track(
                 existing,
                 playlist_id=playlist_id,
                 add_to_liked=add_to_liked,
+                added_via=via,
             )
             _link_discovery_item(db, discovery_item_id, existing.id, via="youtube")
             db.commit()
@@ -163,7 +190,7 @@ def download_youtube_track(
             source_url=source_url,
             title=meta["title"],
             artist=meta["artist"],
-            duration_seconds=meta.get("duration"),
+            duration_seconds=int(meta["duration"]) if meta.get("duration") is not None else None,
             relative_path=relative,
             format=fmt,
             file_size_bytes=size,
@@ -172,8 +199,21 @@ def download_youtube_track(
         db.add(track)
         db.flush()
         update_job(db, job_id, progress=90, stage="Adding to your library…")
-        get_or_link_track(db, user_id, track, playlist_id=playlist_id, add_to_liked=add_to_liked)
+        get_or_link_track(
+            db,
+            user_id,
+            track,
+            playlist_id=playlist_id,
+            add_to_liked=add_to_liked,
+            added_via=via,
+        )
         _link_discovery_item(db, discovery_item_id, track.id, via="youtube")
+        # Backfill duration on discovery item
+        if discovery_item_id and track.duration_seconds:
+            di = db.get(DiscoveryItem, discovery_item_id)
+            if di and not di.duration_ms:
+                di.duration_ms = int(track.duration_seconds) * 1000
+                db.add(di)
         db.commit()
         update_job(
             db,
@@ -315,6 +355,77 @@ def refresh_all_discovery():
     return {"ok": True}
 
 
+@celery_app.task(name="app.workers.tasks.convert_track_format")
+def convert_track_format(user_id: int, track_id: int, target_format: str):
+    """Convert between mp3 and flac using ffmpeg (local file)."""
+    import subprocess
+    from app.config import get_settings
+    from app.services.storage_paths import new_track_relative_path, track_file_path
+    from app.services.track_cleanup import adjust_user_storage
+
+    target_format = target_format.lower()
+    if target_format not in ("mp3", "flac"):
+        return {"status": "invalid_format"}
+
+    db = SessionLocal()
+    try:
+        track = db.get(Track, track_id)
+        if not track:
+            return {"status": "missing"}
+        current = track.format.value if hasattr(track.format, "value") else str(track.format)
+        if current == target_format:
+            return {"status": "already", "format": current}
+
+        src = track_file_path(track.relative_path)
+        if not src.is_file():
+            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": "File missing"})
+            return {"status": "missing_file"}
+
+        settings = get_settings()
+        ffmpeg = settings.ffmpeg_path or "ffmpeg"
+        new_rel = new_track_relative_path(track.artist, track.title, target_format)
+        dest = track_file_path(new_rel)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        if target_format == "mp3":
+            cmd = [ffmpeg, "-y", "-i", str(src), "-codec:a", "libmp3lame", "-q:a", "0", str(dest)]
+        else:
+            cmd = [ffmpeg, "-y", "-i", str(src), "-codec:a", "flac", str(dest)]
+
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0 or not dest.is_file():
+            err = (proc.stderr or proc.stdout or "ffmpeg failed")[:500]
+            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": err})
+            return {"status": "failed", "error": err}
+
+        old_size = track.file_size_bytes
+        old_rel = track.relative_path
+        new_size = dest.stat().st_size
+        track.relative_path = new_rel
+        track.format = AudioFormat.MP3 if target_format == "mp3" else AudioFormat.FLAC
+        track.file_size_bytes = new_size
+        db.add(track)
+        adjust_user_storage(db, user_id, new_size - old_size)
+        db.commit()
+
+        try:
+            old_path = track_file_path(old_rel)
+            if old_path.is_file() and old_path != dest:
+                old_path.unlink()
+        except (ValueError, OSError):
+            pass
+
+        _notify(user_id, "upgrade_complete", {"track_id": track_id, "format": target_format})
+        return {"status": "converted", "format": target_format, "file_size_bytes": new_size}
+    except Exception as exc:
+        db.rollback()
+        logger.exception("convert_track_format failed")
+        _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.upgrade_track_quality")
 def upgrade_track_quality(user_id: int, track_id: int):
     db = SessionLocal()
@@ -454,6 +565,7 @@ def sync_spotify_for_user(user_id: int):
                     status=JobStatus.QUEUED,
                     progress=0,
                     stage="Queued from Spotify sync",
+                    added_via="spotify",
                 )
                 db.add(job)
                 db.commit()
@@ -467,6 +579,7 @@ def sync_spotify_for_user(user_id: int):
                     playlist_id=None,
                     add_to_liked=True,
                     job_id=job.id,
+                    added_via="spotify",
                 )
                 job.celery_task_id = task.id
                 db.add(job)

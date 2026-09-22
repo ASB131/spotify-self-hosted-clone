@@ -28,8 +28,8 @@ from app.services import musicbrainz as mb
 logger = logging.getLogger(__name__)
 
 WEEKLY_SIZE = 40
-RADAR_SIZE = 50
-MAX_PER_ARTIST_RADAR = 4
+RADAR_SIZE = 30
+MAX_PER_ARTIST_RADAR = 6
 
 
 def week_key(dt: datetime | None = None) -> str:
@@ -129,6 +129,15 @@ def _candidate_key(title: str, artist: str) -> str:
     return _norm(f"{title}::{artist}")
 
 
+def _enrich_art(c: dict) -> dict:
+    if c.get("art_url"):
+        return c
+    art = mb.cover_art_url(release_mbid=c.get("release_mbid"))
+    if art:
+        c["art_url"] = art
+    return c
+
+
 def build_discover_weekly_candidates(db: Session, user_id: int) -> list[dict]:
     artists = resolve_library_artists(db, user_id)
     have = _library_keys(db, user_id)
@@ -157,6 +166,7 @@ def build_discover_weekly_candidates(db: Session, user_id: int) -> list[dict]:
         if k in have or k in seen:
             return
         seen.add(k)
+        c = _enrich_art(dict(c))
         candidates.append(
             {
                 "title": title[:512],
@@ -166,6 +176,7 @@ def build_discover_weekly_candidates(db: Session, user_id: int) -> list[dict]:
                 "release_mbid": c.get("release_mbid"),
                 "artist_mbid": c.get("artist_mbid"),
                 "duration_ms": c.get("duration_ms"),
+                "art_url": c.get("art_url"),
             }
         )
 
@@ -183,7 +194,7 @@ def build_discover_weekly_candidates(db: Session, user_id: int) -> list[dict]:
             if len(candidates) >= WEEKLY_SIZE:
                 return candidates[:WEEKLY_SIZE]
 
-    # Similar artists → a few release-group recordings
+    # Similar artists → expand recent releases to real tracks
     for a in artists[:8]:
         if not a.mbid:
             continue
@@ -193,33 +204,42 @@ def build_discover_weekly_candidates(db: Session, user_id: int) -> list[dict]:
             if not smbid:
                 continue
             for rg in mb.browse_artist_releases(smbid, limit=3)[:2]:
-                # Use release-group title as album-ish candidate single
-                add(
-                    {
-                        "title": rg.get("title") or "Unknown",
-                        "artist": sname,
-                        "album": rg.get("title"),
-                        "release_mbid": None,
-                        "artist_mbid": smbid,
-                    }
-                )
-                if len(candidates) >= WEEKLY_SIZE:
-                    return candidates[:WEEKLY_SIZE]
+                rgid = rg.get("id")
+                rel_mbid = mb.release_group_first_release_mbid(rgid) if rgid else None
+                if rel_mbid:
+                    for t in mb.release_tracklist(rel_mbid)[:2]:
+                        t = dict(t)
+                        t.setdefault("artist", sname)
+                        t["artist_mbid"] = smbid
+                        add(t)
+                        if len(candidates) >= WEEKLY_SIZE:
+                            return candidates[:WEEKLY_SIZE]
+                else:
+                    add(
+                        {
+                            "title": rg.get("title") or "Unknown",
+                            "artist": sname,
+                            "album": rg.get("title"),
+                            "artist_mbid": smbid,
+                        }
+                    )
+                    if len(candidates) >= WEEKLY_SIZE:
+                        return candidates[:WEEKLY_SIZE]
 
     return candidates[:WEEKLY_SIZE]
 
 
 def build_release_radar_candidates(db: Session, user_id: int) -> list[dict]:
+    """~30 recent tracks from artists already in the user's library."""
     artists = resolve_library_artists(db, user_id)
-    mbid_set = {a.mbid for a in artists if a.mbid}
-    name_by_mbid = {a.mbid: a.display_name for a in artists if a.mbid}
     have = _library_keys(db, user_id)
     candidates: list[dict] = []
     seen: set[str] = set()
     per_artist: dict[str, int] = {}
+    MAX_PER = 6  # tracks per library artist
 
     def add(c: dict, artist_key: str) -> None:
-        if per_artist.get(artist_key, 0) >= MAX_PER_ARTIST_RADAR:
+        if per_artist.get(artist_key, 0) >= MAX_PER:
             return
         title = (c.get("title") or "").strip()
         artist = (c.get("artist") or "").strip()
@@ -230,6 +250,7 @@ def build_release_radar_candidates(db: Session, user_id: int) -> list[dict]:
             return
         seen.add(k)
         per_artist[artist_key] = per_artist.get(artist_key, 0) + 1
+        c = _enrich_art(dict(c))
         candidates.append(
             {
                 "title": title[:512],
@@ -237,77 +258,67 @@ def build_release_radar_candidates(db: Session, user_id: int) -> list[dict]:
                 "album": c.get("album"),
                 "recording_mbid": c.get("recording_mbid"),
                 "release_mbid": c.get("release_mbid"),
-                "artist_mbid": c.get("artist_mbid") or artist_key if len(artist_key) == 36 else None,
+                "artist_mbid": c.get("artist_mbid")
+                if c.get("artist_mbid")
+                else (artist_key if len(str(artist_key)) == 36 else None),
                 "duration_ms": c.get("duration_ms"),
+                "art_url": c.get("art_url"),
             }
         )
 
-    fresh = lb.fresh_releases(days=14)
-    for rel in fresh:
-        artist_mbids = rel.get("artist_mbids") or []
-        if isinstance(rel.get("artist_mbid"), str):
-            artist_mbids = [rel["artist_mbid"]]
-        match = None
-        for amid in artist_mbids:
-            if amid in mbid_set:
-                match = amid
-                break
-        # Also match by artist credit name
-        credit = (rel.get("artist_credit_name") or rel.get("artist_name") or "").strip()
-        if not match and credit:
-            for a in artists:
-                if _norm(a.display_name) == _norm(credit):
-                    match = a.mbid or a.normalized_name
-                    break
-        if not match:
+    # Primary: MusicBrainz recent releases for each library artist
+    for a in artists:
+        if not a.mbid:
             continue
-        release_mbid = rel.get("release_mbid") or rel.get("mbid") or rel.get("release_group_mbid")
-        artist_name = credit or name_by_mbid.get(match) or "Unknown Artist"
-        album = rel.get("release_name") or rel.get("title") or "New release"
-        if release_mbid:
-            tracks = mb.release_tracklist(release_mbid)
-            if tracks:
-                for t in tracks[:MAX_PER_ARTIST_RADAR]:
+        if len(candidates) >= RADAR_SIZE:
+            break
+        for rg in mb.browse_artist_releases(a.mbid, limit=8):
+            first = (rg.get("first-release-date") or "")[:10]
+            # Prefer last ~3 years; still allow undated
+            if first and first < "2023-01-01":
+                continue
+            rgid = rg.get("id")
+            rel_mbid = mb.release_group_first_release_mbid(rgid) if rgid else None
+            if not rel_mbid:
+                continue
+            tracks = mb.release_tracklist(rel_mbid)
+            # Take a few tracks from each recent release
+            for t in tracks[:3]:
+                t = dict(t)
+                t.setdefault("artist", a.display_name)
+                t["artist_mbid"] = a.mbid
+                add(t, a.mbid)
+                if len(candidates) >= RADAR_SIZE:
+                    return candidates[:RADAR_SIZE]
+            if per_artist.get(a.mbid, 0) >= MAX_PER:
+                break
+
+    # Supplement: ListenBrainz fresh releases filtered to library artists
+    mbid_set = {a.mbid for a in artists if a.mbid}
+    name_by_mbid = {a.mbid: a.display_name for a in artists if a.mbid}
+    if len(candidates) < RADAR_SIZE:
+        for rel in lb.fresh_releases(days=90):
+            artist_mbids = list(rel.get("artist_mbids") or [])
+            if isinstance(rel.get("artist_mbid"), str):
+                artist_mbids.append(rel["artist_mbid"])
+            match = next((amid for amid in artist_mbids if amid in mbid_set), None)
+            credit = (rel.get("artist_credit_name") or rel.get("artist_name") or "").strip()
+            if not match and credit:
+                for a in artists:
+                    if _norm(a.display_name) == _norm(credit):
+                        match = a.mbid or a.normalized_name
+                        break
+            if not match:
+                continue
+            release_mbid = rel.get("release_mbid") or rel.get("mbid")
+            artist_name = credit or name_by_mbid.get(match) or "Unknown Artist"
+            if release_mbid:
+                for t in mb.release_tracklist(release_mbid)[:4]:
                     t = dict(t)
                     t.setdefault("artist", artist_name)
                     add(t, match or artist_name)
                     if len(candidates) >= RADAR_SIZE:
                         return candidates[:RADAR_SIZE]
-                continue
-        add(
-            {
-                "title": album,
-                "artist": artist_name,
-                "album": album,
-                "release_mbid": release_mbid,
-                "artist_mbid": match if match and len(str(match)) == 36 else None,
-            },
-            match or artist_name,
-        )
-        if len(candidates) >= RADAR_SIZE:
-            break
-
-    # Fallback: recent release-groups from MB for library artists
-    if len(candidates) < 10:
-        for a in artists[:15]:
-            if not a.mbid:
-                continue
-            for rg in mb.browse_artist_releases(a.mbid, limit=5):
-                first = (rg.get("first-release-date") or "")[:10]
-                # Prefer last ~18 months loosely
-                if first and first < "2024-01-01":
-                    continue
-                add(
-                    {
-                        "title": rg.get("title") or "Unknown",
-                        "artist": a.display_name,
-                        "album": rg.get("title"),
-                        "artist_mbid": a.mbid,
-                    },
-                    a.mbid,
-                )
-                if len(candidates) >= RADAR_SIZE:
-                    return candidates[:RADAR_SIZE]
 
     return candidates[:RADAR_SIZE]
 
@@ -367,6 +378,7 @@ def replace_week_items(db: Session, playlist: DiscoveryPlaylist, candidates: Ite
                 release_mbid=c.get("release_mbid"),
                 artist_mbid=c.get("artist_mbid"),
                 status=DiscoveryItemStatus.AVAILABLE,
+                art_url=c.get("art_url"),
             )
         )
         used.add(k)

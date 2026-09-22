@@ -41,6 +41,7 @@ class DownloadJob(Base):
     discovery_item_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("discovery_items.id", ondelete="SET NULL"), nullable=True
     )
+    added_via: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -98,6 +98,8 @@ def _item_public(item: DiscoveryItem) -> DiscoveryItemPublic:
     art = None
     if item.track_id and item.track and item.track.art_relative_path:
         art = f"/api/v1/tracks/{item.track_id}/art"
+    elif item.art_url:
+        art = item.art_url
     return DiscoveryItemPublic(
         id=item.id,
         title=item.title,
@@ -320,6 +322,38 @@ def download_discovery_item(
     db.add(job)
     db.commit()
     return {"status": "queued", "via": "youtube", "job_id": job.id, "task_id": task.id}
+
+
+@router.post("/discovery/{kind}/download-all")
+def download_all_discovery(
+    kind: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        dk = DiscoveryKind(kind)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Unknown discovery playlist")
+    pl = get_or_create_discovery_playlist(db, user.id, dk)
+    items = db.scalars(
+        select(DiscoveryItem).where(
+            DiscoveryItem.playlist_id == pl.id,
+            DiscoveryItem.status.in_(
+                (DiscoveryItemStatus.AVAILABLE, DiscoveryItemStatus.FAILED)
+            ),
+        )
+    ).all()
+    queued = 0
+    for item in items:
+        if item.track_id and item.status == DiscoveryItemStatus.READY:
+            continue
+        item.status = DiscoveryItemStatus.DOWNLOADING
+        item.error = None
+        db.add(item)
+        db.commit()
+        acquire_discovery_item.delay(user.id, item.id, prefer_lidarr=True)
+        queued += 1
+    return {"queued": queued}
 
 
 @router.post("/me/plays")

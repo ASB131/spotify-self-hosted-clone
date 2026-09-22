@@ -24,7 +24,11 @@ router = APIRouter(prefix="/tracks", tags=["tracks"])
 ALLOWED_IMAGE = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
 
-def _track_public(track: Track, added_at: datetime | None = None) -> TrackPublic:
+def _track_public(
+    track: Track,
+    added_at: datetime | None = None,
+    added_via: str | None = None,
+) -> TrackPublic:
     art_url = f"/api/v1/tracks/{track.id}/art" if track.art_relative_path else None
     return TrackPublic(
         id=track.id,
@@ -35,6 +39,7 @@ def _track_public(track: Track, added_at: datetime | None = None) -> TrackPublic
         format=track.format.value,
         file_size_bytes=track.file_size_bytes,
         source=track.source.value if hasattr(track.source, "value") else str(track.source),
+        added_via=added_via,
         art_url=art_url,
         added_at=added_at,
     )
@@ -51,12 +56,12 @@ def _user_track(db: Session, user_id: int, track_id: int) -> tuple[Track, UserTr
 @router.get("", response_model=list[TrackPublic])
 def list_tracks(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TrackPublic]:
     rows = db.execute(
-        select(Track, UserTrack.added_at)
+        select(Track, UserTrack.added_at, UserTrack.added_via)
         .join(UserTrack, UserTrack.track_id == Track.id)
         .where(UserTrack.user_id == user.id)
         .order_by(UserTrack.added_at.desc())
     ).all()
-    return [_track_public(track, added_at) for track, added_at in rows]
+    return [_track_public(track, added_at, added_via) for track, added_at, added_via in rows]
 
 
 @router.get("/search", response_model=SearchResults)
@@ -87,7 +92,7 @@ def search(
 @router.get("/{track_id}", response_model=TrackPublic)
 def get_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TrackPublic:
     track, link = _user_track(db, user.id, track_id)
-    return _track_public(track, link.added_at)
+    return _track_public(track, link.added_at, link.added_via)
 
 
 @router.patch("/{track_id}", response_model=TrackPublic)
@@ -179,10 +184,28 @@ def delete_track(track_id: int, user: User = Depends(get_current_user), db: Sess
     }
 
 
+@router.post("/{track_id}/convert")
+def convert_format(
+    track_id: int,
+    body: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.workers.tasks import convert_track_format
+
+    _user_track(db, user.id, track_id)
+    target = str(body.get("format") or "").lower()
+    if target not in ("mp3", "flac"):
+        raise HTTPException(status_code=400, detail="format must be mp3 or flac")
+    task = convert_track_format.delay(user.id, track_id, target)
+    return {"task_id": task.id, "status": "queued", "format": target}
+
+
 @router.post("/upgrade-quality")
 def upgrade_quality(body: UpgradeQualityRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     link = db.scalar(select(UserTrack).where(UserTrack.user_id == user.id, UserTrack.track_id == body.track_id))
     if not link:
         raise HTTPException(status_code=404, detail="Track not in library")
+    # Prefer local ffmpeg convert when going mp3→flac without youtube? keep youtube upgrade for max quality
     task = upgrade_track_quality.delay(user.id, body.track_id)
     return {"task_id": task.id, "status": "queued"}

@@ -135,5 +135,26 @@ def search_recordings_by_tag(tag: str, limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
+def cover_art_url(release_mbid: str | None = None, release_group_mbid: str | None = None) -> str | None:
+    """Cover Art Archive front thumbnail URL (no request — CAA redirects)."""
+    if release_mbid:
+        return f"https://coverartarchive.org/release/{release_mbid}/front-250"
+    if release_group_mbid:
+        return f"https://coverartarchive.org/release-group/{release_group_mbid}/front-250"
+    return None
+
+
+def release_group_first_release_mbid(release_group_mbid: str) -> str | None:
+    data = _get(f"/release-group/{release_group_mbid}", {"inc": "releases"})
+    if not data:
+        return None
+    releases = data.get("releases") or []
+    if not releases:
+        return None
+    # Prefer official / earliest
+    releases = sorted(releases, key=lambda r: r.get("date") or "9999")
+    return releases[0].get("id")
+
+
 def tags_json(tags: list[str]) -> str:
     return json.dumps(tags)

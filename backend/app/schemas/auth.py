@@ -64,6 +64,7 @@ class TrackPublic(BaseModel):
     format: str
     file_size_bytes: int
     source: str = "upload"
+    added_via: Optional[str] = None
     art_url: Optional[str] = None
     added_at: Optional[datetime] = None
 
@@ -98,6 +99,7 @@ class DownloadRequest(BaseModel):
     format: str = "mp3"
     playlist_id: Optional[int] = None
     add_to_liked: bool = True
+    added_via: Optional[str] = None
 
 
 class UpgradeQualityRequest(BaseModel):
