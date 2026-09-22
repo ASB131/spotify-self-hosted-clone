@@ -192,6 +192,43 @@ def search_recordings_by_tag(tag: str, limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
+def recordings_for_artist(artist_mbid: str, limit: int = 40) -> list[dict[str, Any]]:
+    """Fast artist discography sample via one MusicBrainz search (arid)."""
+    data = _get("/recording", {"query": f"arid:{artist_mbid}", "limit": str(limit)})
+    if not data:
+        return []
+    out: list[dict[str, Any]] = []
+    for rec in data.get("recordings") or []:
+        credit = rec.get("artist-credit") or []
+        artist = " ".join(
+            (c.get("name") or "") + (c.get("joinphrase") or "") for c in credit
+        ).strip() or "Unknown Artist"
+        releases = rec.get("releases") or []
+        # Prefer release with a date for "latest first"
+        releases_sorted = sorted(
+            releases,
+            key=lambda r: r.get("date") or "0000",
+            reverse=True,
+        )
+        album = releases_sorted[0].get("title") if releases_sorted else None
+        release_mbid = releases_sorted[0].get("id") if releases_sorted else None
+        date = releases_sorted[0].get("date") if releases_sorted else None
+        out.append(
+            {
+                "title": rec.get("title") or "Unknown",
+                "artist": artist,
+                "album": album,
+                "recording_mbid": rec.get("id"),
+                "release_mbid": release_mbid,
+                "duration_ms": rec.get("length"),
+                "date": date,
+                "score": rec.get("score"),
+            }
+        )
+    out.sort(key=lambda t: t.get("date") or "", reverse=True)
+    return out
+
+
 def cover_art_url(release_mbid: str | None = None, release_group_mbid: str | None = None) -> str | None:
     """Cover Art Archive front thumbnail URL (no request — CAA redirects)."""
     if release_mbid:

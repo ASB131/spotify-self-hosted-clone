@@ -10,7 +10,6 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.download_job import DownloadJob, JobStatus
 from app.models.user import User
-from app.services import listenbrainz as lb
 from app.services import musicbrainz as mb
 from app.services.integrations import lidarr_settings
 from app.services.lidarr_client import LidarrClient
@@ -81,12 +80,8 @@ def catalog_search(q: str, user: User = Depends(get_current_user)):
     artists_raw = mb.search_artists(term, limit=8)
     recordings_raw = mb.search_recordings(term, limit=20)
     mb_ok = bool(artists_raw or recordings_raw)
-    lb_ok = False
-    try:
-        fr = lb.fresh_releases(days=1)
-        lb_ok = isinstance(fr, list)
-    except Exception:
-        lb_ok = False
+    # Skip ListenBrainz on search path — it only slowed the page for a status badge
+    lb_ok = True
 
     recordings = [
         CatalogRecordingHit(
@@ -151,30 +146,64 @@ def catalog_artist(mbid: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/artists/{mbid}/tracks")
-def catalog_artist_tracks(mbid: str, user: User = Depends(get_current_user)):
-    """Sample tracks from recent release groups for download."""
-    rgs = mb.artist_release_groups(mbid, limit=12)
+def catalog_artist_tracks(
+    mbid: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Library tracks for this artist + catalog recordings (latest first). Fast arid search."""
+    from sqlalchemy import select
+
+    from app.models.track import Track
+    from app.models.user_track import UserTrack
+
     artist = mb.artist_lookup(mbid)
     artist_name = (artist or {}).get("name") or "Unknown"
-    tracks: list[dict] = []
-    seen: set[str] = set()
-    for rg in rgs:
-        rel_mbid = mb.release_group_first_release_mbid(rg.get("id") or "")
-        if not rel_mbid:
+    name_l = artist_name.strip().lower()
+
+    library: list[dict] = []
+    rows = db.execute(
+        select(Track)
+        .join(UserTrack, UserTrack.track_id == Track.id)
+        .where(UserTrack.user_id == user.id)
+        .order_by(Track.title)
+    ).scalars().all()
+    for t in rows:
+        if name_l and name_l in (t.artist or "").strip().lower():
+            library.append(
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "artist": t.artist,
+                    "album": t.album,
+                    "duration_seconds": t.duration_seconds,
+                    "art_url": t.art_url,
+                    "in_library": True,
+                }
+            )
+
+    catalog_raw = mb.recordings_for_artist(mbid, limit=40)
+    library_titles = {(x["title"] or "").strip().lower() for x in library}
+    catalog: list[dict] = []
+    for t in catalog_raw:
+        title = (t.get("title") or "").strip()
+        if title.lower() in library_titles:
             continue
-        for t in mb.release_tracklist(rel_mbid)[:4]:
-            key = (t.get("recording_mbid") or "") + (t.get("title") or "")
-            if key in seen:
-                continue
-            seen.add(key)
-            t = dict(t)
-            t.setdefault("artist", artist_name)
-            t["artist_mbid"] = mbid
-            t["art_url"] = mb.cover_art_url(t.get("release_mbid") or rel_mbid)
-            tracks.append(t)
-            if len(tracks) >= 40:
-                return {"artist": artist_name, "mbid": mbid, "tracks": tracks}
-    return {"artist": artist_name, "mbid": mbid, "tracks": tracks}
+        t = dict(t)
+        t["artist"] = t.get("artist") or artist_name
+        t["artist_mbid"] = mbid
+        t["art_url"] = mb.cover_art_url(t.get("release_mbid"))
+        t["in_library"] = False
+        catalog.append(t)
+
+    return {
+        "artist": artist_name,
+        "mbid": mbid,
+        "library": library,
+        "tracks": catalog,
+        # back-compat
+        "catalog": catalog,
+    }
 
 
 @router.get("/recordings/{mbid}", response_model=CatalogRecordingPage)

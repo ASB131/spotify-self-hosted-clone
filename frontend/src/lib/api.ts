@@ -40,15 +40,49 @@ function isLoopbackUrl(url: string): boolean {
   return /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(url.trim());
 }
 
+function isPrivateHostname(host: string): boolean {
+  return /^(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/i.test(
+    host,
+  );
+}
+
+/** Prefer same-origin when the page is public but runtime URLs point at LAN. */
+function sameOriginWs(): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
+}
+
 /** Direct API origin for OAuth redirects (browser must reach FastAPI with auth cookies). */
 export function getOAuthApiUrl(): string {
   if (typeof window !== "undefined") {
     const runtime = (window as unknown as { __RESONANCE_API_DIRECT__?: string }).__RESONANCE_API_DIRECT__;
-    if (runtime && runtime.trim()) return runtime.replace(/\/$/, "");
+    if (runtime && runtime.trim()) {
+      try {
+        const u = new URL(runtime);
+        // Public hostname must not call LAN API (breaks CORS / local-network permission)
+        if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
+          return window.location.origin;
+        }
+      } catch {
+        /* fall through */
+      }
+      return runtime.replace(/\/$/, "");
+    }
   }
   const direct = (process.env.NEXT_PUBLIC_API_DIRECT_URL || "").trim();
-  if (direct && !isLoopbackUrl(direct)) return direct.replace(/\/$/, "");
-  // Same-origin login works via proxy; OAuth needs a real API host from .env API_DIRECT_URL
+  if (direct && !isLoopbackUrl(direct)) {
+    if (typeof window !== "undefined") {
+      try {
+        const u = new URL(direct);
+        if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
+          return window.location.origin;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return direct.replace(/\/$/, "");
+  }
   if (typeof window !== "undefined") {
     return window.location.origin;
   }
@@ -61,21 +95,34 @@ export const API_URL = typeof window !== "undefined" ? getApiUrl() : process.env
 export function getWsUrl(): string {
   if (typeof window !== "undefined") {
     const runtime = (window as unknown as { __RESONANCE_WS__?: string }).__RESONANCE_WS__;
-    if (runtime && runtime.trim()) return runtime.replace(/\/$/, "");
+    if (runtime && runtime.trim()) {
+      try {
+        const u = new URL(runtime.replace(/^ws/i, "http"));
+        if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
+          return sameOriginWs();
+        }
+      } catch {
+        /* ignore */
+      }
+      return runtime.replace(/\/$/, "");
+    }
   }
   const env = (process.env.NEXT_PUBLIC_WS_URL || "").trim();
   if (env && !isLoopbackUrl(env.replace(/^ws/i, "http"))) {
+    if (typeof window !== "undefined") {
+      try {
+        const u = new URL(env.replace(/^ws/i, "http"));
+        if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
+          return sameOriginWs();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     return env.replace(/\/$/, "");
   }
   if (typeof window !== "undefined") {
-    const direct = getOAuthApiUrl();
-    try {
-      const u = new URL(direct);
-      return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}`;
-    } catch {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${window.location.host}`;
-    }
+    return sameOriginWs();
   }
   return "ws://127.0.0.1:8000";
 }

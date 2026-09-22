@@ -446,8 +446,9 @@ def acquire_catalog_recording(
             if album_info:
                 if job_id:
                     update_job(db, job_id, progress=40, stage="Waiting for torrent import…")
+                # Don't block forever — fall through to YouTube if torrent never lands
                 tf = client.wait_for_track_file(
-                    title=title, artist=artist, album=album_info, timeout_sec=720, poll_sec=20
+                    title=title, artist=artist, album=album_info, timeout_sec=180, poll_sec=15
                 )
                 if tf and tf.get("path"):
                     rel = client.path_to_relative(tf["path"])
@@ -481,12 +482,11 @@ def acquire_catalog_recording(
                 update_job(
                     db,
                     job_id,
-                    status=JobStatus.FAILED,
-                    progress=100,
-                    stage="Lidarr failed",
-                    error="Lidarr could not import this recording",
+                    progress=55,
+                    stage="Lidarr miss — trying YouTube…",
+                    error=None,
                 )
-            return {"status": "failed", "via": "lidarr"}
+            logger.info("Lidarr miss for %s — %s; falling back to YouTube", artist, title)
 
         url = _youtube_search_url(artist, title)
         job = None

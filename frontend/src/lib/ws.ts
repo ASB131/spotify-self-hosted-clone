@@ -23,11 +23,15 @@ export function useWebSocket(onEvent: (event: string, data: Record<string, unkno
       const base = wsBaseUrl();
       const url = token ? `${base}/api/v1/ws?token=${encodeURIComponent(token)}` : `${base}/api/v1/ws`;
       ws = new WebSocket(url);
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        delay = 2000;
+      };
       ws.onclose = () => {
         setConnected(false);
         if (!closed) {
-          retryTimer = setTimeout(connect, 3000);
+          retryTimer = setTimeout(connect, delay);
+          delay = Math.min(delay * 2, 30000);
         }
       };
       ws.onerror = () => {
@@ -43,6 +47,7 @@ export function useWebSocket(onEvent: (event: string, data: Record<string, unkno
       };
     };
 
+    let delay = 2000;
     connect();
     return () => {
       closed = true;

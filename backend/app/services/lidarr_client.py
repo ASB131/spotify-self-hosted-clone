@@ -21,6 +21,11 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
+def _is_valid_root_path(path: str | None) -> bool:
+    p = (path or "").strip()
+    return bool(p) and "{" not in p and "}" not in p and p.startswith("/")
+
+
 class LidarrClient:
     def __init__(self, settings: LidarrSettings):
         self.base = settings.base_url.rstrip("/")
@@ -87,6 +92,9 @@ class LidarrClient:
     def _post(self, path: str, payload: dict) -> Any:
         with httpx.Client(timeout=45.0, headers=self._headers()) as client:
             r = client.post(f"{self.base}{path}", json=payload)
+            if r.status_code >= 400:
+                detail = (r.text or "")[:500]
+                logger.warning("Lidarr POST %s -> %s: %s", path, r.status_code, detail)
             r.raise_for_status()
             if r.content:
                 return r.json()
@@ -118,6 +126,37 @@ class LidarrClient:
             logger.exception("Lidarr album lookup failed")
             return []
 
+    def list_artists(self) -> list[dict]:
+        try:
+            return self._get("/api/v1/artist") or []
+        except Exception:
+            return []
+
+    def list_albums(self, *, artist_id: int | None = None) -> list[dict]:
+        params: dict[str, Any] = {}
+        if artist_id:
+            params["artistId"] = artist_id
+        try:
+            return self._get("/api/v1/album", params) or []
+        except Exception:
+            return []
+
+    def find_artist_by_foreign_id(self, foreign_artist_id: str | None) -> dict | None:
+        if not foreign_artist_id:
+            return None
+        for a in self.list_artists():
+            if a.get("foreignArtistId") == foreign_artist_id or str(a.get("id")) == str(foreign_artist_id):
+                return a
+        return None
+
+    def find_album_by_foreign_id(self, foreign_album_id: str | None, artist_id: int | None = None) -> dict | None:
+        if not foreign_album_id:
+            return None
+        for a in self.list_albums(artist_id=artist_id):
+            if a.get("foreignAlbumId") == foreign_album_id:
+                return a
+        return None
+
     def trigger_album_search(self, album_ids: list[int]) -> bool:
         try:
             self._post("/api/v1/command", {"name": "AlbumSearch", "albumIds": album_ids})
@@ -142,9 +181,12 @@ class LidarrClient:
         if not roots or not profiles:
             logger.warning("Lidarr missing root folder or quality profile")
             return None
-        root = roots[0]
-        qid = profiles[0]["id"]
-        mid = meta_profiles[0]["id"] if meta_profiles else 1
+        root_path = roots[0].get("path") or "/music"
+        if not _is_valid_root_path(root_path):
+            logger.warning("Lidarr root path invalid: %r", root_path)
+            return None
+        qid = int(profiles[0]["id"])
+        mid = int(meta_profiles[0]["id"]) if meta_profiles else 1
 
         term = f"lidarr:{release_mbid}" if release_mbid else f"{artist_name} {album_name or ''}".strip()
         results = self.lookup_album(term)
@@ -154,45 +196,76 @@ class LidarrClient:
             return None
 
         album = results[0]
-        if album.get("id") and album.get("monitored"):
-            self.trigger_album_search([album["id"]])
+        # Already in library
+        if album.get("id"):
+            self.trigger_album_search([int(album["id"])])
             return album
 
-        artist = album.get("artist") or {}
-        if not artist.get("id"):
+        artist_stub = album.get("artist") or {}
+        foreign_artist_id = artist_stub.get("foreignArtistId")
+        artist = self.find_artist_by_foreign_id(foreign_artist_id)
+        if not artist:
             artist_payload = {
-                **artist,
+                "foreignArtistId": foreign_artist_id,
+                "artistName": artist_stub.get("artistName") or artist_stub.get("name") or artist_name,
                 "qualityProfileId": qid,
                 "metadataProfileId": mid,
-                "rootFolderPath": root.get("path"),
+                "rootFolderPath": root_path,
                 "monitored": True,
-                "addOptions": {"searchForMissingAlbums": False},
+                "monitorNewItems": "all",
+                "addOptions": {
+                    "searchForMissingAlbums": False,
+                    "monitor": "all",
+                },
             }
+            # Keep useful metadata from lookup without bad path templates
+            for key in ("overview", "artistType", "disambiguation", "links", "images", "genres"):
+                if artist_stub.get(key) is not None:
+                    artist_payload[key] = artist_stub[key]
             try:
-                artist = self._post("/api/v1/artist", artist_payload) or artist
+                artist = self._post("/api/v1/artist", artist_payload) or {}
             except Exception:
-                logger.exception("Lidarr add artist failed")
-                return None
+                # Race / already exists
+                artist = self.find_artist_by_foreign_id(foreign_artist_id) or {}
+                if not artist.get("id"):
+                    logger.exception("Lidarr add artist failed")
+                    return None
+
+        artist_id = artist.get("id") or album.get("artistId")
+        foreign_album_id = album.get("foreignAlbumId")
+        existing = self.find_album_by_foreign_id(foreign_album_id, artist_id=artist_id)
+        if existing and existing.get("id"):
+            self.trigger_album_search([int(existing["id"])])
+            return existing
 
         album_payload = {
-            **album,
-            "artistId": artist.get("id") or album.get("artistId"),
+            "title": album.get("title") or album_name or "Unknown",
+            "foreignAlbumId": foreign_album_id,
+            "artistId": artist_id,
             "monitored": True,
-            "qualityProfileId": qid,
+            "anyReleaseOk": True,
             "addOptions": {"searchForNewAlbum": True},
         }
+        if album.get("releases"):
+            album_payload["releases"] = album["releases"]
+        if album.get("albumType"):
+            album_payload["albumType"] = album["albumType"]
+        if album.get("releaseDate"):
+            album_payload["releaseDate"] = album["releaseDate"]
+
         try:
             added = self._post("/api/v1/album", album_payload) or album_payload
         except Exception:
+            existing = self.find_album_by_foreign_id(foreign_album_id, artist_id=artist_id)
+            if existing and existing.get("id"):
+                self.trigger_album_search([int(existing["id"])])
+                return existing
             logger.exception("Lidarr add album failed")
-            if album.get("id"):
-                self.trigger_album_search([album["id"]])
-                return album
             return None
 
-        aid = added.get("id") or album.get("id")
+        aid = added.get("id")
         if aid:
-            self.trigger_album_search([aid])
+            self.trigger_album_search([int(aid)])
         return added
 
     def list_track_files(self, *, artist_id: int | None = None, album_id: int | None = None) -> list[dict]:
@@ -217,7 +290,6 @@ class LidarrClient:
     ) -> dict[str, Any] | None:
         files = self.list_track_files(artist_id=artist_id, album_id=album_id)
         if not files and not album_id and not artist_id:
-            # Broad scan is expensive — try recent history only
             return None
         title_n = _norm(title)
         artist_n = _norm(artist.split(",")[0])
@@ -232,7 +304,6 @@ class LidarrClient:
                 score += 3
             if artist_n and artist_n in _norm(path):
                 score += 1
-            # Prefer non-mix filenames
             if re.search(r"\b(mix|remix|mashup|bootleg|live)\b", name_n):
                 score -= 2
             if score > best_score:
@@ -269,14 +340,12 @@ class LidarrClient:
         """
         raw = (lidarr_path or "").replace("\\", "/")
         root = music_root().resolve()
-        # Common Lidarr container path
         for prefix in ("/music/", "/data/music/", str(root).replace("\\", "/") + "/"):
             if raw.lower().startswith(prefix.lower()):
                 rel = raw[len(prefix) :].lstrip("/")
                 full = (root / rel).resolve()
                 if str(full).startswith(str(root)) and full.is_file():
                     return rel.replace("\\", "/")
-        # Already relative under music root?
         candidate = root / raw.lstrip("/")
         if candidate.is_file() and str(candidate.resolve()).startswith(str(root)):
             return str(candidate.resolve().relative_to(root)).replace("\\", "/")
