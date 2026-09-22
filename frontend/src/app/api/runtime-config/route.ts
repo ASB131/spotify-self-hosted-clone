@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "fs";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 /**
  * Prefer a file written at container start (see Dockerfile entrypoint) so Next
  * cannot inline empty env values at build time.
