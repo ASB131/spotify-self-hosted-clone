@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { getApiUrl } from "@/lib/api";
 
 type Props = {
-  kind: "Playlist" | "Artist" | "Public Playlist";
+  kind: "Playlist" | "Artist" | "Public Playlist" | "Album";
   title: string;
   subtitle?: ReactNode;
   /** Absolute or /api/... art URLs (up to 4 for collage) */
