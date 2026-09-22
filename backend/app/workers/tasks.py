@@ -805,7 +805,12 @@ def _search_youtube_for_query(query: str) -> str | None:
     """Best-effort YouTube search via yt-dlp (no API key)."""
     import yt_dlp
 
-    opts = {"quiet": True, "extract_flat": True, "skip_download": True}
+    opts = {
+        "quiet": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "js_runtimes": {"deno": {}},
+    }
     cookies = _ytdlp_cookie_path()
     if cookies:
         opts["cookiefile"] = cookies

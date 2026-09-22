@@ -80,7 +80,9 @@ def _writable_cookiefile() -> Optional[str]:
 
 def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
     """
-    Keep format selection simple; rely on a current yt-dlp + Node.js for YouTube JS.
+    Use yt-dlp defaults for player clients + Deno for YouTube EJS challenges.
+    Forcing android/ios/tv/web breaks downloads when cookies skip mobile clients
+    and SABR-only streaming removes formats.
     """
     codec = "flac" if audio_format == "flac" else "mp3"
     opts: dict = {
@@ -101,12 +103,8 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
                 "preferredquality": "0",
             }
         ],
-        # Prefer clients that still return downloadable URLs without SABR-only web
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "ios", "tv", "web"],
-            }
-        },
+        # Deno is enabled by default in yt-dlp; be explicit so workers always use it.
+        "js_runtimes": {"deno": {}},
     }
     cookiefile = _writable_cookiefile()
     if cookiefile:
