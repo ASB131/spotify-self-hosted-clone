@@ -194,7 +194,7 @@ export function AudioPlayerBar() {
           >
             {isPlaying ? <IconPause /> : <IconPlay />}
           </button>
-          <button type="button" onClick={next} className="text-muted hover:text-white transition-colors p-1" aria-label="Next">
+          <button type="button" onClick={() => next()} className="text-muted hover:text-white transition-colors p-1" aria-label="Next">
             <IconNext />
           </button>
           <button
