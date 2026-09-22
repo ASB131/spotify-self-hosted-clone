@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api, getApiUrl, type Track } from "@/lib/api";
 import { artistHref, splitArtistNames } from "@/lib/artists";
-import { usePlayerStore } from "@/store/player";
 import { YouTubeResults } from "@/components/YouTubeResults";
+import { TrackTable } from "@/components/TrackTable";
 
 type SearchResults = {
   tracks: Track[];
@@ -83,7 +83,6 @@ function ArtThumb({
 
 function SearchInner() {
   const params = useSearchParams();
-  const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [loading, setLoading] = useState(false);
@@ -255,30 +254,10 @@ function SearchInner() {
       {show("songs") && (
         <section className="mb-8">
           <h3 className="text-xl font-bold mb-3">Songs in your library</h3>
-          <ul className="space-y-1">
-            {(results?.tracks || []).map((t) => (
-              <li key={`lib-${t.id}`}>
-                <button
-                  type="button"
-                  onClick={() => playTrackInContext(t, results!.tracks)}
-                  className="w-full flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10 text-left"
-                >
-                  <ArtThumb url={t.art_url} label={t.title} />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{t.title}</p>
-                    <p className="text-xs text-muted truncate">Song · {t.artist}</p>
-                  </div>
-                  <span className="text-xs text-muted mr-2">In library</span>
-                  <span className="w-6 h-6 rounded-full bg-spotify text-black flex items-center justify-center text-xs font-bold">
-                    ✓
-                  </span>
-                </button>
-              </li>
-            ))}
-            {!loading && !(results?.tracks?.length) && (
-              <p className="text-sm text-muted px-2">No songs in your library match this search.</p>
-            )}
-          </ul>
+          <TrackTable
+            tracks={results?.tracks || []}
+            emptyMessage={loading ? "Searching…" : "No songs in your library match this search."}
+          />
         </section>
       )}
 
