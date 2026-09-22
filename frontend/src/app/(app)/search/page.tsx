@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { api, getApiUrl, type Track } from "@/lib/api";
 import { artistHref, splitArtistNames } from "@/lib/artists";
 import { usePlayerStore } from "@/store/player";
+import { YouTubeResults } from "@/components/YouTubeResults";
 
 type SearchResults = {
   tracks: Track[];
@@ -18,7 +19,7 @@ type SearchResults = {
   }[];
 };
 
-type Tab = "all" | "playlists" | "songs" | "artists";
+type Tab = "all" | "playlists" | "songs" | "artists" | "youtube";
 
 function artSrc(url?: string | null) {
   if (!url) return null;
@@ -86,6 +87,7 @@ function SearchInner() {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [loading, setLoading] = useState(false);
+  const [queueMsg, setQueueMsg] = useState<string | null>(null);
   const q = (params.get("q") || "").trim();
 
   useEffect(() => {
@@ -117,7 +119,6 @@ function SearchInner() {
     for (const t of results.tracks) {
       for (const name of splitArtistNames(t.artist)) {
         if (qLower && !name.toLowerCase().includes(qLower) && !qLower.includes(name.toLowerCase())) {
-          // Still include if the raw artist string matched search
           if (!(t.artist || "").toLowerCase().includes(qLower)) continue;
         }
         const key = name.toLowerCase();
@@ -139,6 +140,7 @@ function SearchInner() {
     { id: "songs", label: "Songs" },
     { id: "artists", label: "Artists" },
     { id: "playlists", label: "Playlists" },
+    { id: "youtube", label: "YouTube" },
   ];
   const show = (section: Tab) => tab === "all" || tab === section;
 
@@ -147,25 +149,24 @@ function SearchInner() {
   }
 
   return (
-    <div className="pb-8">
-      {results && (
-        <div className="flex flex-wrap gap-2 mb-6">
-          {chips.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setTab(c.id)}
-              className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition ${
-                tab === c.id ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/15"
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="pb-8 min-w-0">
+      <div className="flex flex-wrap gap-2 mb-6">
+        {chips.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => setTab(c.id)}
+            className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition ${
+              tab === c.id ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/15"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
 
-      {loading && <p className="text-sm text-muted mb-4">Searching…</p>}
+      {loading && <p className="text-sm text-muted mb-4">Searching library…</p>}
+      {queueMsg && <p className="text-sm text-spotify mb-4">{queueMsg}</p>}
 
       {show("artists") && topArtist && (
         <section className="mb-8 flex items-center gap-5 rounded-lg bg-gradient-to-r from-[#3a3a3a] to-[#181818] p-5">
@@ -253,7 +254,7 @@ function SearchInner() {
 
       {show("songs") && (
         <section className="mb-8">
-          <h3 className="text-xl font-bold mb-3">Songs</h3>
+          <h3 className="text-xl font-bold mb-3">Songs in your library</h3>
           <ul className="space-y-1">
             {(results?.tracks || []).map((t) => (
               <li key={`lib-${t.id}`}>
@@ -267,7 +268,7 @@ function SearchInner() {
                     <p className="font-medium truncate">{t.title}</p>
                     <p className="text-xs text-muted truncate">Song · {t.artist}</p>
                   </div>
-                  <span className="text-xs text-muted mr-2">Song</span>
+                  <span className="text-xs text-muted mr-2">In library</span>
                   <span className="w-6 h-6 rounded-full bg-spotify text-black flex items-center justify-center text-xs font-bold">
                     ✓
                   </span>
@@ -279,6 +280,18 @@ function SearchInner() {
             )}
           </ul>
         </section>
+      )}
+
+      {show("youtube") && (
+        <YouTubeResults
+          query={q}
+          heading="YouTube"
+          limit={tab === "youtube" ? 20 : 8}
+          onQueued={() => {
+            setQueueMsg("Download queued — check Downloads in the account menu.");
+            setTimeout(() => setQueueMsg(null), 5000);
+          }}
+        />
       )}
     </div>
   );

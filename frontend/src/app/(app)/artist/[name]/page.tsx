@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CollectionHero, formatTotalDuration } from "@/components/CollectionHero";
 import { PlaylistGrid } from "@/components/PlaylistGrid";
 import { TrackTable } from "@/components/TrackTable";
+import { YouTubeResults } from "@/components/YouTubeResults";
 import { api, type Playlist, type Track } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { WebSocketBridge } from "@/lib/ws";
@@ -38,6 +40,8 @@ export default function ArtistPage() {
   const nameParam = Array.isArray(raw) ? raw.join("/") : String(raw || "");
   const [data, setData] = useState<ArtistPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showYoutube, setShowYoutube] = useState(false);
+  const [queueMsg, setQueueMsg] = useState<string | null>(null);
   const setQueue = usePlayerStore((s) => s.setQueue);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
@@ -59,9 +63,11 @@ export default function ArtistPage() {
     return `${n} song${n === 1 ? "" : "s"} · ${formatTotalDuration(data.total_duration_seconds)}`;
   }, [data]);
 
+  const ytQuery = data ? `${data.name} songs` : "";
+
   return (
     <>
-    <WebSocketBridge onRefresh={load} />
+      <WebSocketBridge onRefresh={load} />
       {error && (
         <p className="text-sm text-red-400 mb-4">
           {error}{" "}
@@ -70,6 +76,7 @@ export default function ArtistPage() {
           </button>
         </p>
       )}
+      {queueMsg && <p className="text-sm text-spotify mb-4">{queueMsg}</p>}
       {data && (
         <>
           <CollectionHero
@@ -82,9 +89,38 @@ export default function ArtistPage() {
             onShuffle={toggleShuffle}
           />
           <h2 className="text-xl font-bold mb-3">Songs</h2>
-          <TrackTable tracks={data.tracks} emptyMessage="No songs for this artist." />
+          <TrackTable tracks={data.tracks} emptyMessage="No songs for this artist in your library yet." />
+
+          <div className="mt-10 mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-bold">Find more on YouTube</h2>
+            <button
+              type="button"
+              onClick={() => setShowYoutube((v) => !v)}
+              className="text-sm px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15"
+            >
+              {showYoutube ? "Hide results" : "Search YouTube"}
+            </button>
+          </div>
+          <p className="text-sm text-muted mb-4">
+            Preview tracks, then download into your library.{" "}
+            <Link href="/downloads" className="hover:underline text-white/80">
+              View downloads
+            </Link>
+          </p>
+          {showYoutube && (
+            <YouTubeResults
+              query={ytQuery}
+              heading={`YouTube · ${data.name}`}
+              limit={15}
+              onQueued={() => {
+                setQueueMsg("Download queued — check Downloads when it finishes.");
+                setTimeout(() => setQueueMsg(null), 5000);
+              }}
+            />
+          )}
+
           <h2 className="text-xl font-bold mt-10 mb-3">Appears in playlists</h2>
-          <PlaylistGrid playlists={data.playlists} emptyMessage="Not in any playlists yet." compact />
+          <PlaylistGrid playlists={data.playlists} emptyMessage="Not in any playlists yet." compact limit={12} />
         </>
       )}
     </>

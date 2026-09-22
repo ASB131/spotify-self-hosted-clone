@@ -16,6 +16,7 @@ from app.api.v1 import (
     setup,
     tracks,
     ws,
+    youtube,
     youtube_admin,
 )
 
@@ -28,6 +29,7 @@ api_router.include_router(artists.router)
 api_router.include_router(playlists.router)
 api_router.include_router(discovery.router)
 api_router.include_router(downloads.router)
+api_router.include_router(youtube.router)
 api_router.include_router(admin.router)
 api_router.include_router(integrations_admin.router)
 api_router.include_router(admin_setup.router)
