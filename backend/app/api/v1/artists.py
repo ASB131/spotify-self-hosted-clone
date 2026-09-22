@@ -40,6 +40,7 @@ def _track_public(track: Track, added_at=None) -> TrackPublic:
         duration_seconds=track.duration_seconds,
         format=track.format.value,
         file_size_bytes=track.file_size_bytes,
+        source=track.source.value if hasattr(track.source, "value") else str(track.source),
         art_url=f"/api/v1/tracks/{track.id}/art" if track.art_relative_path else None,
         added_at=added_at,
     )

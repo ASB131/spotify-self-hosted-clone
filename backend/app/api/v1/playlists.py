@@ -48,6 +48,7 @@ def _track_public_from_pt(pt: PlaylistTrack) -> TrackPublic:
         duration_seconds=t.duration_seconds,
         format=t.format.value,
         file_size_bytes=t.file_size_bytes,
+        source=t.source.value if hasattr(t.source, "value") else str(t.source),
         art_url=f"/api/v1/tracks/{t.id}/art" if t.art_relative_path else None,
         added_at=pt.added_at,
     )

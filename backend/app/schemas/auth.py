@@ -63,6 +63,7 @@ class TrackPublic(BaseModel):
     duration_seconds: Optional[int]
     format: str
     file_size_bytes: int
+    source: str = "upload"
     art_url: Optional[str] = None
     added_at: Optional[datetime] = None
 

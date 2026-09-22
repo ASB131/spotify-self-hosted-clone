@@ -33,6 +33,7 @@ export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props
             <tr className="text-muted border-b border-white/10 text-xs uppercase tracking-wider">
               <th className="w-12 font-normal text-right pr-4 py-2">#</th>
               <th className="font-normal text-left py-2">Title</th>
+              <th className="font-normal text-left py-2 hidden md:table-cell w-14" aria-label="Source" />
               <th className="font-normal text-left py-2 hidden md:table-cell w-36">Date added</th>
               <th className="font-normal text-right py-2 w-24 pr-2" aria-label="Duration">
                 <ClockIcon />
@@ -82,6 +83,9 @@ export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props
                       </div>
                     </div>
                   </td>
+                  <td className="py-2 hidden md:table-cell w-14 align-middle">
+                    <SourceBadge source={t.source} />
+                  </td>
                   <td className="py-2 text-muted hidden md:table-cell text-sm">
                     {formatRelativeDate(t.added_at)}
                   </td>
@@ -120,6 +124,31 @@ export function TrackTable({ tracks, onChanged, onUpgrade, emptyMessage }: Props
         onSaved={() => onChanged?.()}
       />
     </>
+  );
+}
+
+function SourceBadge({ source }: { source?: string | null }) {
+  const key = (source || "upload").toLowerCase();
+  let label = "Other";
+  let className = "bg-amber-400/15 text-amber-200/90 border-amber-400/25";
+  if (key === "youtube") {
+    label = "YT";
+    className = "bg-red-400/15 text-red-300/90 border-red-400/25";
+  } else if (key === "spotify") {
+    label = "SP";
+    className = "bg-emerald-400/15 text-emerald-300/90 border-emerald-400/25";
+  } else if (key === "upload") {
+    label = "Up";
+  }
+  const title =
+    key === "youtube" ? "YouTube" : key === "spotify" ? "Spotify" : key === "upload" ? "Upload" : "Other source";
+  return (
+    <span
+      title={title}
+      className={`inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-[3px] border px-1 text-[10px] font-semibold tracking-wide ${className}`}
+    >
+      {label}
+    </span>
   );
 }
 
