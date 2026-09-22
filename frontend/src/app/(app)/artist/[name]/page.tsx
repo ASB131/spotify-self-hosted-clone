@@ -111,9 +111,9 @@ export default function ArtistPage() {
             <YouTubeResults
               query={ytQuery}
               heading={`YouTube · ${data.name}`}
-              limit={15}
+              pageSize={15}
               onQueued={() => {
-                setQueueMsg("Download queued — check Downloads when it finishes.");
+                setQueueMsg("Download queued — check the bell next to your profile.");
                 setTimeout(() => setQueueMsg(null), 5000);
               }}
             />

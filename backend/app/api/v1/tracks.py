@@ -18,7 +18,6 @@ from app.services.search import search_library
 from app.services.storage_paths import art_file_path, ensure_parent, new_art_relative_path
 from app.services.streaming import stream_track
 from app.services.track_cleanup import remove_user_track_membership
-from app.workers.tasks import upgrade_track_quality
 from app.models.playlist import Playlist, PlaylistTrack
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
@@ -263,21 +262,69 @@ def convert_format(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.workers.tasks import convert_track_format
+    """Re-download from YouTube as the target format (not local ffmpeg convert)."""
+    from app.models.download_job import DownloadJob, JobStatus
+    from app.models.track import TrackSource
+    from app.services.events import publish_user_event
+    from app.workers.tasks import redownload_track_format
 
-    _user_track(db, user.id, track_id)
+    track, _link = _user_track(db, user.id, track_id)
     target = str(body.get("format") or "").lower()
     if target not in ("mp3", "flac"):
         raise HTTPException(status_code=400, detail="format must be mp3 or flac")
-    task = convert_track_format.delay(user.id, track_id, target)
-    return {"task_id": task.id, "status": "queued", "format": target}
+    current = track.format.value if hasattr(track.format, "value") else str(track.format)
+    if current.lower() == target:
+        raise HTTPException(status_code=400, detail=f"Already {target.upper()}")
+    if not track.source_url or track.source != TrackSource.YOUTUBE:
+        raise HTTPException(
+            status_code=400,
+            detail="No YouTube source — only YouTube tracks can be re-downloaded in another format",
+        )
+
+    job = DownloadJob(
+        user_id=user.id,
+        url=track.source_url,
+        title=track.title,
+        artist=track.artist,
+        audio_format=target,
+        status=JobStatus.QUEUED,
+        progress=0,
+        stage=f"Queued: re-download as {target.upper()}",
+        track_id=track.id,
+        added_via="convert",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    task = redownload_track_format.delay(user.id, track_id, target, job_id=job.id)
+    job.celery_task_id = task.id
+    db.add(job)
+    db.commit()
+
+    publish_user_event(
+        user.id,
+        "download_progress",
+        {
+            "job_id": job.id,
+            "status": job.status.value,
+            "progress": 0,
+            "stage": job.stage,
+            "title": job.title,
+            "artist": job.artist,
+            "error": None,
+            "track_id": track.id,
+            "url": job.url,
+            "audio_format": job.audio_format,
+            "bytes_downloaded": None,
+            "bytes_total": None,
+            "speed_bps": None,
+        },
+    )
+    return {"task_id": task.id, "job_id": job.id, "status": "queued", "format": target}
 
 
 @router.post("/upgrade-quality")
 def upgrade_quality(body: UpgradeQualityRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    link = db.scalar(select(UserTrack).where(UserTrack.user_id == user.id, UserTrack.track_id == body.track_id))
-    if not link:
-        raise HTTPException(status_code=404, detail="Track not in library")
-    # Prefer local ffmpeg convert when going mp3→flac without youtube? keep youtube upgrade for max quality
-    task = upgrade_track_quality.delay(user.id, body.track_id)
-    return {"task_id": task.id, "status": "queued"}
+    """Re-download as FLAC (same path as convert)."""
+    return convert_format(body.track_id, {"format": "flac"}, user, db)

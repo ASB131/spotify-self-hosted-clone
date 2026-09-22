@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { clearStoredToken } from "@/lib/auth";
+import { DownloadsBell } from "@/components/DownloadsBell";
 
 type Me = {
   display_name: string;
@@ -107,54 +108,57 @@ export function TopBar({ onOpenLibrary }: { onOpenLibrary?: () => void }) {
         </form>
       </div>
 
-      <div className="relative shrink-0" ref={menuRef}>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center hover:scale-105 transition-transform ring-2 ring-transparent hover:ring-white/20"
-          aria-label="Account menu"
-          aria-expanded={open}
-        >
-          {initial}
-        </button>
-        {open && (
-          <div className="absolute right-0 mt-2 w-56 rounded-md bg-[#282828] shadow-2xl py-1 text-sm z-50 border border-white/5">
-            <MenuLink href="/profile" onClick={() => setOpen(false)}>
-              Account
-            </MenuLink>
-            <MenuLink href="/stats" onClick={() => setOpen(false)}>
-              Listening stats
-            </MenuLink>
-            <MenuLink href="/history" onClick={() => setOpen(false)}>
-              Listening history
-            </MenuLink>
-            <MenuLink href="/downloads" onClick={() => setOpen(false)}>
-              Downloads
-            </MenuLink>
-            <MenuLink href="/setup-guide" onClick={() => setOpen(false)}>
-              Setup guide
-            </MenuLink>
-            <MenuLink href="/extension/connect" onClick={() => setOpen(false)}>
-              Extension connect
-            </MenuLink>
-            {me?.role === "admin" && (
-              <MenuLink href="/admin" onClick={() => setOpen(false)}>
-                Admin
+      <div className="shrink-0 flex items-center gap-2">
+        <DownloadsBell />
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center hover:scale-105 transition-transform ring-2 ring-transparent hover:ring-white/20"
+            aria-label="Account menu"
+            aria-expanded={open}
+          >
+            {initial}
+          </button>
+          {open && (
+            <div className="absolute right-0 mt-2 w-56 rounded-md bg-[#282828] shadow-2xl py-1 text-sm z-50 border border-white/5">
+              <MenuLink href="/profile" onClick={() => setOpen(false)}>
+                Account
               </MenuLink>
-            )}
-            <div className="border-t border-white/10 my-1" />
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                logout();
-              }}
-              className="w-full text-left px-4 py-2.5 hover:bg-white/10 text-white"
-            >
-              Log out
-            </button>
-          </div>
-        )}
+              <MenuLink href="/stats" onClick={() => setOpen(false)}>
+                Listening stats
+              </MenuLink>
+              <MenuLink href="/history" onClick={() => setOpen(false)}>
+                Listening history
+              </MenuLink>
+              <MenuLink href="/downloads" onClick={() => setOpen(false)}>
+                Downloads
+              </MenuLink>
+              <MenuLink href="/setup-guide" onClick={() => setOpen(false)}>
+                Setup guide
+              </MenuLink>
+              <MenuLink href="/extension/connect" onClick={() => setOpen(false)}>
+                Extension connect
+              </MenuLink>
+              {me?.role === "admin" && (
+                <MenuLink href="/admin" onClick={() => setOpen(false)}>
+                  Admin
+                </MenuLink>
+              )}
+              <div className="border-t border-white/10 my-1" />
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  logout();
+                }}
+                className="w-full text-left px-4 py-2.5 hover:bg-white/10 text-white"
+              >
+                Log out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

@@ -15,7 +15,7 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let retryDelay = 4000;
 let failCount = 0;
 let intentionalClose = false;
-/** After repeated failures (e.g. reverse proxy without WS upgrade), stop retrying until a full remount. */
+/** After repeated failures or when WS is unavailable (public domain via Next proxy), stop retrying. */
 let giveUp = false;
 
 function notifyConnected(v: boolean) {
@@ -29,9 +29,17 @@ function connectShared() {
   if (sharedWs && (sharedWs.readyState === WebSocket.OPEN || sharedWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
+
+  const base = getWsUrl();
+  // Next.js cannot upgrade WebSockets; public domain with only LAN API → skip silently (REST polling).
+  if (!base) {
+    giveUp = true;
+    notifyConnected(false);
+    return;
+  }
+
   intentionalClose = false;
   const token = getStoredToken();
-  const base = getWsUrl();
   const url = token ? `${base}/api/v1/ws?token=${encodeURIComponent(token)}` : `${base}/api/v1/ws`;
 
   let ws: WebSocket;
@@ -73,13 +81,11 @@ function connectShared() {
 function scheduleRetry() {
   if (retryTimer || giveUp) return;
   failCount += 1;
-  // Next.js HTTP proxy cannot upgrade WS — same-origin wss often fails forever.
-  // Cap retries so the console is not flooded.
-  if (failCount >= 5) {
+  if (failCount >= 3) {
     giveUp = true;
     return;
   }
-  const wait = Math.min(retryDelay * Math.pow(2, failCount - 1), 60000);
+  const wait = Math.min(retryDelay * Math.pow(2, failCount - 1), 30000);
   retryTimer = setTimeout(() => {
     retryTimer = undefined;
     if (sharedHandlers.size > 0 && !giveUp) connectShared();
@@ -90,12 +96,7 @@ function subscribe(handler: Handler, onConn: (c: boolean) => void) {
   sharedHandlers.add(handler);
   sharedListeners.add(onConn);
   onConn(sharedConnected);
-  // Soft reset give-up when a new page mounts after long idle (user navigated)
-  if (giveUp && failCount >= 5) {
-    // keep giveUp; downloads still poll via REST
-  } else {
-    connectShared();
-  }
+  if (!giveUp) connectShared();
   return () => {
     sharedHandlers.delete(handler);
     sharedListeners.delete(onConn);
@@ -113,6 +114,15 @@ function subscribe(handler: Handler, onConn: (c: boolean) => void) {
       giveUp = false;
     }
   };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("resonance-runtime-ready", () => {
+    // RuntimeConfig may set a reachable WS URL after first mount.
+    giveUp = false;
+    failCount = 0;
+    if (sharedHandlers.size > 0) connectShared();
+  });
 }
 
 export function useWebSocket(onEvent: (event: string, data: Record<string, unknown>) => void) {

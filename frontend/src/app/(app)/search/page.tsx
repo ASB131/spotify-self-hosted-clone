@@ -286,9 +286,9 @@ function SearchInner() {
         <YouTubeResults
           query={q}
           heading="YouTube"
-          limit={tab === "youtube" ? 20 : 8}
+          pageSize={tab === "youtube" ? 15 : 8}
           onQueued={() => {
-            setQueueMsg("Download queued — check Downloads in the account menu.");
+            setQueueMsg("Download queued — check the bell next to your profile.");
             setTimeout(() => setQueueMsg(null), 5000);
           }}
         />

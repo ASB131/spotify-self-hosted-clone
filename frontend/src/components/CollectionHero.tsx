@@ -91,8 +91,8 @@ export function CollectionHero({
   );
 
   return (
-    <section className="relative -mx-6 mb-2 overflow-hidden">
-      <div className="px-6 pt-4 pb-8" style={{ background: bg }}>
+    <section className="relative -mx-4 sm:-mx-6 mb-2 overflow-hidden max-w-[100vw]">
+      <div className="px-4 sm:px-6 pt-4 pb-8" style={{ background: bg }}>
         <div className="flex flex-col sm:flex-row items-end gap-6">
           {Cover}
           <div className="min-w-0 pb-1 flex-1">
@@ -115,7 +115,7 @@ export function CollectionHero({
         </div>
       </div>
 
-      <div className="px-6 py-5 flex items-center gap-5 bg-gradient-to-b from-black/40 to-transparent">
+      <div className="px-4 sm:px-6 py-5 flex items-center gap-5 bg-gradient-to-b from-black/40 to-transparent">
         {onPlay && (
           <button
             type="button"

@@ -271,8 +271,8 @@ export function TrackTable({
         </div>
       )}
 
-      <div className="w-full min-w-0 overflow-x-auto">
-        <table className="w-full text-sm border-collapse table-fixed min-w-[480px]">
+      <div className="w-full min-w-0 max-w-full overflow-x-hidden">
+        <table className="w-full text-sm border-collapse table-fixed">
           <thead className="sticky top-0 z-10 bg-surface/95 backdrop-blur">
             <tr className="text-muted border-b border-white/10 text-xs uppercase tracking-wider">
               <th className="w-12 py-2 text-right pr-3">
@@ -352,7 +352,7 @@ export function TrackTable({
                       />
                     </span>
                   </td>
-                  <td className="py-2 pr-2">
+                  <td className="py-2 pr-2 min-w-0 overflow-hidden">
                     <div className="flex items-center gap-3 min-w-0">
                       <button
                         type="button"
@@ -367,11 +367,11 @@ export function TrackTable({
                           <span className="flex w-full h-full items-center justify-center text-muted text-xs">♪</span>
                         )}
                       </button>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1 overflow-hidden">
                         <button
                           type="button"
                           onClick={() => playTrackInContext(t, sorted, playlistId)}
-                          className={`block truncate font-normal text-left hover:underline ${
+                          className={`block w-full truncate font-normal text-left hover:underline ${
                             active ? "text-spotify" : "text-white"
                           }`}
                         >

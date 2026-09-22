@@ -653,138 +653,155 @@ def refresh_all_discovery():
     return {"ok": True}
 
 
-@celery_app.task(name="app.workers.tasks.convert_track_format")
-def convert_track_format(user_id: int, track_id: int, target_format: str):
-    """Convert between mp3 and flac using ffmpeg (local file)."""
-    import subprocess
-    from app.config import get_settings
-    from app.services.storage_paths import new_track_relative_path, track_file_path
+@celery_app.task(name="app.workers.tasks.redownload_track_format")
+def redownload_track_format(user_id: int, track_id: int, target_format: str, job_id: int | None = None):
+    """Re-download a YouTube track in another format and replace the stored file."""
+    from app.services.storage_paths import track_file_path
     from app.services.track_cleanup import adjust_user_storage
+    from celery import current_task
 
-    target_format = target_format.lower()
+    target_format = (target_format or "").lower()
     if target_format not in ("mp3", "flac"):
         return {"status": "invalid_format"}
 
     db = SessionLocal()
-    try:
-        track = db.get(Track, track_id)
-        if not track:
-            return {"status": "missing"}
-        current = track.format.value if hasattr(track.format, "value") else str(track.format)
-        if current == target_format:
-            return {"status": "already", "format": current}
-
-        src = track_file_path(track.relative_path)
-        if not src.is_file():
-            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": "File missing"})
-            return {"status": "missing_file"}
-
-        settings = get_settings()
-        ffmpeg = settings.ffmpeg_path or "ffmpeg"
-        new_rel = new_track_relative_path(track.artist, track.title, target_format)
-        dest = track_file_path(new_rel)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-
-        if target_format == "mp3":
-            cmd = [ffmpeg, "-y", "-i", str(src), "-codec:a", "libmp3lame", "-q:a", "0", str(dest)]
-        else:
-            cmd = [ffmpeg, "-y", "-i", str(src), "-codec:a", "flac", str(dest)]
-
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0 or not dest.is_file():
-            err = (proc.stderr or proc.stdout or "ffmpeg failed")[:500]
-            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": err})
-            return {"status": "failed", "error": err}
-
-        old_size = track.file_size_bytes
-        old_rel = track.relative_path
-        new_size = dest.stat().st_size
-        track.relative_path = new_rel
-        track.format = AudioFormat.MP3 if target_format == "mp3" else AudioFormat.FLAC
-        track.file_size_bytes = new_size
-        db.add(track)
-        adjust_user_storage(db, user_id, new_size - old_size)
-        db.commit()
-
-        try:
-            old_path = track_file_path(old_rel)
-            if old_path.is_file() and old_path != dest:
-                old_path.unlink()
-        except (ValueError, OSError):
-            pass
-
-        _notify(user_id, "upgrade_complete", {"track_id": track_id, "format": target_format})
-        return {"status": "converted", "format": target_format, "file_size_bytes": new_size}
-    except Exception as exc:
-        db.rollback()
-        logger.exception("convert_track_format failed")
-        _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": str(exc)})
-        raise
-    finally:
-        db.close()
-
-
-@celery_app.task(name="app.workers.tasks.upgrade_track_quality")
-def upgrade_track_quality(user_id: int, track_id: int):
-    db = SessionLocal()
     tmp_dir = None
     try:
         track = db.get(Track, track_id)
-        if not track or track.format == AudioFormat.FLAC:
-            return {"status": "skipped"}
+        if not track:
+            if job_id:
+                update_job(db, job_id, status=JobStatus.FAILED, stage="Failed", error="Track missing")
+            return {"status": "missing"}
 
         if not track.source_url or track.source != TrackSource.YOUTUBE:
-            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": "No YouTube source"})
+            err = "No YouTube source"
+            if job_id:
+                update_job(db, job_id, status=JobStatus.FAILED, stage="Failed", error=err)
+            _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": err})
             return {"status": "no_source"}
+
+        if job_id:
+            job = db.get(DownloadJob, job_id)
+            if job and not job.celery_task_id and current_task and current_task.request.id:
+                job.celery_task_id = current_task.request.id
+                db.add(job)
+                db.commit()
+            update_job(
+                db,
+                job_id,
+                status=JobStatus.RUNNING,
+                progress=10,
+                stage=f"Re-downloading as {target_format.upper()}…",
+                title=track.title,
+                artist=track.artist,
+            )
 
         old_size = track.file_size_bytes
         old_rel = track.relative_path
 
+        import time as _time
+
+        _last_prog = [0.0]
+
+        def _on_ytdlp_progress(d: dict) -> None:
+            if not job_id:
+                return
+            if d.get("status") != "downloading":
+                if d.get("status") == "finished":
+                    update_job(db, job_id, progress=70, stage="Extracting audio…")
+                return
+            now = _time.monotonic()
+            if now - _last_prog[0] < 0.6:
+                return
+            _last_prog[0] = now
+            downloaded = d.get("downloaded_bytes") or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            speed = d.get("speed") or 0
+            pct = int(downloaded * 100 / total) if total else min(65, 15 + int(downloaded / (512 * 1024)))
+            mapped = 15 + int(max(0, min(100, pct)) * 0.55)
+            update_job(
+                db,
+                job_id,
+                progress=mapped,
+                stage=f"Downloading… {_fmt_bytes(downloaded)}" + (f" / {_fmt_bytes(total)}" if total else ""),
+                bytes_downloaded=int(downloaded) if downloaded else None,
+                bytes_total=int(total) if total else None,
+                speed_bps=int(speed) if speed else None,
+            )
+
         meta, audio_path, thumb = download_youtube_audio(
-            track.source_url, "flac", track.title, track.artist
+            track.source_url, target_format, track.title, track.artist, on_progress=_on_ytdlp_progress
         )
         tmp_dir = audio_path.parent
         (
-            source_key,
+            _source_key,
             relative,
             size,
             art_rel,
             fmt,
             _source,
             _url,
-        ) = persist_download(meta, audio_path, thumb, "flac")
-
-        from app.services.track_cleanup import adjust_user_storage
+        ) = persist_download(meta, audio_path, thumb, target_format)
 
         track.relative_path = relative
         track.format = fmt
         track.file_size_bytes = size
-        track.art_relative_path = art_rel
+        if art_rel:
+            track.art_relative_path = art_rel
         db.add(track)
-        delta = size - old_size
-        adjust_user_storage(db, user_id, delta)
+        adjust_user_storage(db, user_id, size - old_size)
         db.commit()
-
-        from app.services.storage_paths import track_file_path
 
         try:
             old_path = track_file_path(old_rel)
-            if old_path.is_file():
+            if old_path.is_file() and str(old_path) != str(track_file_path(relative)):
                 old_path.unlink()
         except (ValueError, OSError) as exc:
             logger.warning("Could not remove old file: %s", exc)
 
-        _notify(user_id, "upgrade_complete", {"track_id": track_id})
-        return {"status": "upgraded", "track_id": track_id}
+        if job_id:
+            update_job(
+                db,
+                job_id,
+                status=JobStatus.COMPLETED,
+                progress=100,
+                stage=f"Done — now {target_format.upper()}",
+                track_id=track_id,
+                title=track.title,
+                artist=track.artist,
+            )
+        _notify(user_id, "upgrade_complete", {"track_id": track_id, "format": target_format, "job_id": job_id})
+        _notify(
+            user_id,
+            "download_complete",
+            {"track_id": track_id, "job_id": job_id, "format": target_format, "redownload": True},
+        )
+        return {"status": "redownloaded", "track_id": track_id, "format": target_format}
     except Exception as exc:
         db.rollback()
-        logger.exception("upgrade failed")
+        logger.exception("redownload_track_format failed")
+        if job_id:
+            try:
+                update_job(db, job_id, status=JobStatus.FAILED, stage="Failed", error=str(exc)[:500])
+            except Exception:
+                pass
         _notify(user_id, "upgrade_failed", {"track_id": track_id, "error": str(exc)})
         raise
     finally:
         db.close()
         if tmp_dir and tmp_dir.exists():
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@celery_app.task(name="app.workers.tasks.convert_track_format")
+def convert_track_format(user_id: int, track_id: int, target_format: str):
+    """Deprecated local convert — redirects to YouTube re-download."""
+    return redownload_track_format(user_id, track_id, target_format)
+
+
+@celery_app.task(name="app.workers.tasks.upgrade_track_quality")
+def upgrade_track_quality(user_id: int, track_id: int):
+    return redownload_track_format(user_id, track_id, "flac")
 
 
 @celery_app.task(name="app.workers.tasks.sync_all_spotify_libraries")

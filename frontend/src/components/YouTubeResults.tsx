@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
+import { YouTubePreview } from "@/components/YouTubePreview";
 
 export type YoutubeHit = {
   id: string;
@@ -15,52 +16,94 @@ export type YoutubeHit = {
   raw_title?: string;
 };
 
-type Props = {
-  /** Search query sent to the API. Empty skips fetch. */
+type SearchResponse = {
   query: string;
-  /** Optional label above the list. */
+  results: YoutubeHit[];
+  offset: number;
+  has_more: boolean;
+};
+
+type Props = {
+  query: string;
   heading?: string;
-  limit?: number;
-  /** Called after a download is queued successfully. */
+  /** Page size for each fetch. */
+  pageSize?: number;
   onQueued?: (jobId: number) => void;
   className?: string;
 };
 
-export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueued, className }: Props) {
+export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQueued, className }: Props) {
   const [results, setResults] = useState<YoutubeHit[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [queued, setQueued] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const abortRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const offsetRef = useRef(0);
+
+  const fetchPage = useCallback(
+    async (q: string, offset: number, append: boolean, token: number) => {
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const res = await api<SearchResponse>(
+          `/api/v1/youtube/search?q=${encodeURIComponent(q)}&limit=${pageSize}&offset=${offset}&exclude_owned=true`
+        );
+        if (token !== abortRef.current) return;
+        setResults((prev) => (append ? [...prev, ...(res.results || [])] : res.results || []));
+        setHasMore(!!res.has_more);
+        offsetRef.current = offset + (res.results?.length || 0);
+      } catch (e) {
+        if (token !== abortRef.current) return;
+        if (!append) setResults([]);
+        setError(e instanceof Error ? e.message : "YouTube search failed");
+        setHasMore(false);
+      } finally {
+        if (token === abortRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [pageSize]
+  );
 
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
       setError(null);
+      setHasMore(false);
+      offsetRef.current = 0;
       return;
     }
     const token = ++abortRef.current;
-    setLoading(true);
-    setError(null);
-    api<{ results: YoutubeHit[] }>(
-      `/api/v1/youtube/search?q=${encodeURIComponent(q)}&limit=${limit}`
-    )
-      .then((res) => {
-        if (token !== abortRef.current) return;
-        setResults(res.results || []);
-      })
-      .catch((e) => {
-        if (token !== abortRef.current) return;
-        setResults([]);
-        setError(e instanceof Error ? e.message : "YouTube search failed");
-      })
-      .finally(() => {
-        if (token === abortRef.current) setLoading(false);
-      });
-  }, [query, limit]);
+    offsetRef.current = 0;
+    setPreviewId(null);
+    void fetchPage(q, 0, false, token);
+  }, [query, fetchPage]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        const q = query.trim();
+        if (!q || loading || loadingMore || !hasMore) return;
+        const token = abortRef.current;
+        void fetchPage(q, offsetRef.current, true, token);
+      },
+      { rootMargin: "240px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [query, loading, loadingMore, hasMore, fetchPage]);
 
   async function download(hit: YoutubeHit) {
     setBusyId(hit.id);
@@ -75,6 +118,7 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
         }),
       });
       setQueued((prev) => new Set(prev).add(hit.id));
+      setResults((prev) => prev.filter((r) => r.id !== hit.id));
       onQueued?.(res.job_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Download failed");
@@ -93,7 +137,7 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
       </div>
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
       {!loading && !error && results.length === 0 && (
-        <p className="text-sm text-muted">No YouTube results.</p>
+        <p className="text-sm text-muted">No YouTube results (or everything matching is already in your library).</p>
       )}
       <ul className="space-y-1">
         {results.map((hit) => {
@@ -101,7 +145,7 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
           const isQueued = queued.has(hit.id);
           return (
             <li key={hit.id} className="rounded-md hover:bg-white/5">
-              <div className="flex items-center gap-3 px-2 py-2">
+              <div className="flex items-center gap-3 px-2 py-2 min-w-0">
                 <button
                   type="button"
                   onClick={() => setPreviewId(isPreview ? null : hit.id)}
@@ -118,7 +162,7 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
                     {isPreview ? "■" : "▶"}
                   </span>
                 </button>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 overflow-hidden">
                   <p className="font-medium truncate text-sm">{hit.title}</p>
                   <p className="text-xs text-muted truncate">
                     {hit.artist}
@@ -147,22 +191,26 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
                 </div>
               </div>
               {isPreview && (
-                <div className="px-2 pb-3">
-                  <div className="aspect-video max-w-xl rounded-md overflow-hidden bg-black border border-white/10">
-                    <iframe
-                      title={`Preview ${hit.title}`}
-                      src={`https://www.youtube-nocookie.com/embed/${hit.id}?autoplay=1&rel=0`}
-                      className="w-full h-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                </div>
+                <YouTubePreview videoId={hit.id} title={hit.title} onClose={() => setPreviewId(null)} />
               )}
             </li>
           );
         })}
       </ul>
+      <div ref={sentinelRef} className="h-4" />
+      {loadingMore && <p className="text-xs text-muted py-2">Loading more…</p>}
+      {!loading && !loadingMore && hasMore && (
+        <button
+          type="button"
+          className="text-sm text-spotify font-semibold py-2"
+          onClick={() => {
+            const q = query.trim();
+            void fetchPage(q, offsetRef.current, true, abortRef.current);
+          }}
+        >
+          Load more
+        </button>
+      )}
     </section>
   );
 }

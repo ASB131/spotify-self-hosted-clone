@@ -24,6 +24,7 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [localTrack, setLocalTrack] = useState<Track | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
 
   useEffect(() => {
     if (!track) return;
@@ -32,6 +33,7 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
     setAlbum(track.album || "");
     setPreview(null);
     setError(null);
+    setBanner(null);
     setLocalTrack(track);
   }, [track]);
 
@@ -78,20 +80,16 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
     if (!track) return;
     setBusy(true);
     setError(null);
+    setBanner(null);
     try {
       await api(`/api/v1/tracks/${track.id}/convert`, {
         method: "POST",
         body: JSON.stringify({ format }),
       });
-      setError(`Converting to ${format.toUpperCase()}… refresh shortly.`);
-      setTimeout(() => {
-        onSaved();
-        api<Track>(`/api/v1/tracks/${track.id}`)
-          .then(setLocalTrack)
-          .catch(() => undefined);
-      }, 4000);
+      setBanner(`Re-download as ${format.toUpperCase()} queued — watch the downloads bell.`);
+      onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Convert failed");
+      setError(e instanceof Error ? e.message : "Re-download failed");
     } finally {
       setBusy(false);
     }
@@ -168,10 +166,12 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
           onClick={() => convert(other as "mp3" | "flac")}
           className="mt-1 w-full text-sm font-semibold py-2 rounded-full bg-white/10 hover:bg-white/15 disabled:opacity-40"
         >
-          Convert to {other.toUpperCase()}
+          Re-download as {other.toUpperCase()}
         </button>
+        <p className="text-[11px] text-muted">Fetches again from YouTube in the new format (shows on Downloads).</p>
       </div>
 
+      {banner && <p className="text-sm text-spotify mb-3">{banner}</p>}
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
       <div className="flex items-center gap-3 justify-between">
         <button type="button" onClick={remove} disabled={busy} className="text-sm text-red-400 hover:underline">

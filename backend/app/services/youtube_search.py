@@ -42,7 +42,7 @@ def search_youtube(query: str, *, limit: int = 12) -> list[dict[str, Any]]:
     q = (query or "").strip()
     if len(q) < 2:
         return []
-    limit = max(1, min(25, limit))
+    limit = max(1, min(50, limit))
 
     opts: dict[str, Any] = {
         "quiet": True,

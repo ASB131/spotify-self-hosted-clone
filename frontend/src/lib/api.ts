@@ -49,11 +49,6 @@ function isPrivateHostname(host: string): boolean {
 }
 
 /** Prefer same-origin when the page is public but runtime URLs point at LAN. */
-function sameOriginWs(): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}`;
-}
-
 function httpToWs(url: string): string {
   return url.replace(/^http/i, "ws").replace(/\/$/, "");
 }
@@ -98,28 +93,30 @@ export function getOAuthApiUrl(): string {
 /** @deprecated use getApiUrl() for fetches so Docker can proxy via the web app */
 export const API_URL = typeof window !== "undefined" ? getApiUrl() : process.env.NEXT_PUBLIC_API_URL || "";
 
-export function getWsUrl(): string {
+export function getWsUrl(): string | null {
   if (typeof window !== "undefined") {
     const runtime = (window as unknown as { __RESONANCE_WS__?: string }).__RESONANCE_WS__;
     if (runtime && runtime.trim()) {
       try {
         const u = new URL(runtime.replace(/^ws/i, "http"));
+        // Private WS from a public page is unreachable — do not fall back to same-origin
+        // (Next.js /api proxy cannot upgrade WebSockets; that floods the console).
         if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
-          return sameOriginWs();
+          return null;
         }
       } catch {
         /* ignore */
       }
       return runtime.replace(/\/$/, "");
     }
-    // Prefer API direct origin for WS — Next.js /api proxy cannot upgrade WebSockets.
     const apiDirect = (window as unknown as { __RESONANCE_API_DIRECT__?: string }).__RESONANCE_API_DIRECT__;
     if (apiDirect && apiDirect.trim()) {
       try {
         const u = new URL(apiDirect);
-        if (!(isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname)) {
-          return httpToWs(apiDirect);
+        if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
+          return null;
         }
+        return httpToWs(apiDirect);
       } catch {
         /* ignore */
       }
@@ -131,7 +128,7 @@ export function getWsUrl(): string {
       try {
         const u = new URL(env.replace(/^ws/i, "http"));
         if (isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname) {
-          return sameOriginWs();
+          return null;
         }
       } catch {
         /* ignore */
@@ -139,10 +136,8 @@ export function getWsUrl(): string {
     }
     return env.replace(/\/$/, "");
   }
-  if (typeof window !== "undefined") {
-    return sameOriginWs();
-  }
-  return "ws://127.0.0.1:8000";
+  // Same-origin through Next.js cannot upgrade WS — skip rather than spam console errors.
+  return null;
 }
 
 export const WS_URL = typeof window !== "undefined" ? "" : process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
