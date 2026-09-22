@@ -33,6 +33,7 @@ services:
       retries: 10
 
   api:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -60,6 +61,7 @@ services:
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   worker:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -83,6 +85,7 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 
   beat:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -97,6 +100,7 @@ services:
     command: celery -A app.workers.celery_app beat --loglevel=info
 
   web:
+    image: ${WEB_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-web:${IMAGE_TAG:-main}}
     build:
       context: ./frontend
       dockerfile: Dockerfile

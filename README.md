@@ -48,7 +48,23 @@ Load `extension/` as an unpacked extension in Chrome. Set API URL and JWT in ext
 
 ## Pre-built images
 
-GitHub Actions builds and publishes Docker images on release tags. You can point `docker-compose.yml` `image:` fields at those tags instead of `build:` once published (see `.github/workflows/docker-publish.yml`).
+GitHub Actions publishes:
+
+- `ghcr.io/asb131/spotify-self-hosted-clone-api:main`
+- `ghcr.io/asb131/spotify-self-hosted-clone-web:main`
+
+`docker-compose.yml` uses these by default (`IMAGE_TAG`, `API_IMAGE`, `WEB_IMAGE` in `.env`). Run:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+After the first successful CI run, open **GitHub → Packages** for each image and set visibility to **Public** so hosts can pull without logging in.
+
+To build locally instead of pulling, clear the image variables in `.env` (`API_IMAGE=` and `WEB_IMAGE=`) and run `docker compose up -d --build`.
+
+If CI fails with `write_package`, ensure **Settings → Actions → General → Workflow permissions** is **Read and write permissions**.
 
 ## License
 

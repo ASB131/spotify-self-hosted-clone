@@ -6,22 +6,25 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     strategy:
       matrix:
         include:
           - context: backend
-            image: resonance-api
+            image_suffix: api
+            dockerfile: Dockerfile
           - context: frontend
-            image: resonance-web
+            image_suffix: web
+            dockerfile: Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -32,24 +35,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Image name
+        id: image
+        run: |
+          REPO="${GITHUB_REPOSITORY,,}"
+          echo "name=${{ env.REGISTRY }}/${REPO}-${{ matrix.image_suffix }}" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
-      - name: Build and push
+      - name: Build and push backend
+        if: matrix.context == 'backend'
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.context }}
+          context: ./backend
+          file: ./backend/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+
+      - name: Build and push frontend
+        if: matrix.context == 'frontend'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
           build-args: |
             NEXT_PUBLIC_API_URL=http://localhost:8000
             NEXT_PUBLIC_WS_URL=ws://localhost:8000
