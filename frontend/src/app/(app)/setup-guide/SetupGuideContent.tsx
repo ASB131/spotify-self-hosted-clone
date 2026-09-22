@@ -32,7 +32,7 @@ export default function SetupGuideContent() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "media-player-chrome-extension.zip";
+      a.download = "mix-player-chrome-extension.zip";
       a.click();
       URL.revokeObjectURL(url);
       window.open("/extension/install", "_blank", "noopener,noreferrer");
@@ -47,7 +47,7 @@ export default function SetupGuideContent() {
       <header>
         <h1 className="text-3xl font-bold mb-2">Setup guide</h1>
         <p className="text-muted text-sm">
-          Media player is YouTube-only. Save tracks with the Chrome extension on watch pages.
+          Save tracks from YouTube with the Chrome extension on watch pages.
         </p>
       </header>
 
@@ -83,7 +83,7 @@ export default function SetupGuideContent() {
             your API token
           </li>
           <li>
-            On YouTube, click <strong className="text-white">Save to Media player</strong>
+            On YouTube, click <strong className="text-white">Save to Mix player</strong>
           </li>
         </ol>
         {checklist?.extension_cors_hint && (

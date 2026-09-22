@@ -37,5 +37,5 @@ def download_extension_zip(_user: User = Depends(get_current_user)) -> Streaming
             if path.is_file():
                 zf.write(path, arcname=str(path.relative_to(root)).replace("\\", "/"))
     buf.seek(0)
-    headers = {"Content-Disposition": 'attachment; filename="media-player-chrome-extension.zip"'}
+    headers = {"Content-Disposition": 'attachment; filename="mix-player-chrome-extension.zip"'}
     return StreamingResponse(buf, media_type="application/zip", headers=headers)

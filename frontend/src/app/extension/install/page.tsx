@@ -14,7 +14,7 @@ export default function ExtensionInstallPage() {
         </li>
         <li>
           Unzip to a folder, for example{" "}
-          <code className="text-white bg-[#242424] px-1.5 py-0.5 rounded">Downloads/media-player-extension</code>.
+          <code className="text-white bg-[#242424] px-1.5 py-0.5 rounded">Downloads/mix-player-extension</code>.
         </li>
         <li>
           Open Chrome → <code className="text-white bg-[#242424] px-1.5 py-0.5 rounded">chrome://extensions</code>.
@@ -31,7 +31,7 @@ export default function ExtensionInstallPage() {
           and send your token.
         </li>
         <li>
-          On YouTube, use <strong className="text-white">Save to Media player</strong>.
+          On YouTube, use <strong className="text-white">Save to Mix player</strong>.
         </li>
       </ol>
       <Link href="/profile" className="inline-block mt-8 text-spotify underline text-sm">

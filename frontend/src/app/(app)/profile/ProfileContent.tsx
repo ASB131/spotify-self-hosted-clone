@@ -95,7 +95,7 @@ export default function ProfileContent() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "media-player-chrome-extension.zip";
+      a.download = "mix-player-chrome-extension.zip";
       a.click();
       URL.revokeObjectURL(url);
       window.open("/extension/install", "_blank", "noopener,noreferrer");

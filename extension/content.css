@@ -1,4 +1,4 @@
-#resonance-save-btn {
+#mix-player-save-btn {
   margin-left: 12px;
   padding: 0 16px;
   height: 36px;
@@ -10,7 +10,7 @@
   cursor: pointer;
 }
 
-#resonance-modal-backdrop {
+#mix-player-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
@@ -20,7 +20,7 @@
   justify-content: center;
 }
 
-#resonance-modal {
+#mix-player-modal {
   background: #282828;
   color: #fff;
   padding: 24px;
@@ -29,15 +29,15 @@
   font-family: system-ui, sans-serif;
 }
 
-#resonance-modal label {
+#mix-player-modal label {
   display: block;
   margin-top: 12px;
   font-size: 12px;
   color: #b3b3b3;
 }
 
-#resonance-modal input,
-#resonance-modal select {
+#mix-player-modal input,
+#mix-player-modal select {
   width: 100%;
   margin-top: 4px;
   padding: 8px;
@@ -47,7 +47,7 @@
   color: #fff;
 }
 
-#resonance-modal-actions {
+#mix-player-modal-actions {
   margin-top: 16px;
   display: flex;
   gap: 8px;

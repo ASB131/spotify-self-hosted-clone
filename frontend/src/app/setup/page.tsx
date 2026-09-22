@@ -50,7 +50,7 @@ export default function SetupPage() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-black">
       <form onSubmit={submit} className="w-full max-w-md bg-[#121212] p-8 rounded-lg space-y-4 border border-white/5">
         <h1 className="text-2xl font-bold">Admin setup</h1>
-        <p className="text-sm text-muted">Create the first administrator account for this Media player server.</p>
+        <p className="text-sm text-muted">Create the first administrator account for this Mix player server.</p>
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <input
           className="w-full bg-black/30 rounded px-3 py-2"

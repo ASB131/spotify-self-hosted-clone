@@ -70,8 +70,8 @@ export function TopBar({ onOpenLibrary }: { onOpenLibrary?: () => void }) {
           <LibraryMiniIcon />
         </button>
       )}
-      <Link href="/" className="shrink-0 flex items-center" aria-label="Media player home">
-        <Image src="/logo.png" alt="Media player" width={36} height={36} className="rounded-full" priority />
+      <Link href="/" className="shrink-0 flex items-center" aria-label="Mix player home">
+        <Image src="/logo.png" alt="Mix player" width={36} height={36} className="rounded-full" priority />
       </Link>
 
       <div className="flex-1 flex items-center justify-center gap-2 min-w-0 max-w-2xl mx-auto">

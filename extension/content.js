@@ -30,7 +30,7 @@ function apiCall(path, method, body) {
 }
 
 function injectButton() {
-  if (document.getElementById("resonance-save-btn")) return;
+  if (document.getElementById("mix-player-save-btn")) return;
   const target =
     document.querySelector("#top-level-buttons-computed") ||
     document.querySelector("#actions") ||
@@ -38,9 +38,9 @@ function injectButton() {
   if (!target) return;
 
   const btn = document.createElement("button");
-  btn.id = "resonance-save-btn";
+  btn.id = "mix-player-save-btn";
   btn.type = "button";
-  btn.textContent = "Save to Media player";
+  btn.textContent = "Save to Mix player";
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -60,12 +60,12 @@ function videoMeta() {
 }
 
 function openModal() {
-  if (document.getElementById("resonance-modal-backdrop")) return;
+  if (document.getElementById("mix-player-modal-backdrop")) return;
   const meta = videoMeta();
   const backdrop = document.createElement("div");
-  backdrop.id = "resonance-modal-backdrop";
+  backdrop.id = "mix-player-modal-backdrop";
   backdrop.innerHTML = `
-    <div id="resonance-modal">
+    <div id="mix-player-modal">
       <h2 style="margin:0;font-size:18px">Save to library</h2>
       <label>Title<input id="rs-title" value="${escapeAttr(meta.title)}" /></label>
       <label>Artist<input id="rs-artist" value="${escapeAttr(meta.artist)}" /></label>
@@ -81,7 +81,7 @@ function openModal() {
         </select>
       </label>
       <p id="rs-playlists-hint" style="font-size:12px;color:#b3b3b3;margin:4px 0 0">Loading playlists…</p>
-      <div id="resonance-modal-actions">
+      <div id="mix-player-modal-actions">
         <button type="button" id="rs-cancel">Cancel</button>
         <button type="button" id="rs-save">Download</button>
       </div>

@@ -22,7 +22,7 @@ settings = get_settings()
 
 limiter = Limiter(key_func=get_remote_address)
 
-fastapi_app = FastAPI(title="Self-Hosted Music API", version="1.0.0")
+fastapi_app = FastAPI(title="Mix player API", version="2.0.0")
 fastapi_app.state.limiter = limiter
 fastapi_app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -55,7 +55,7 @@ def health():
 
 @fastapi_app.get("/")
 def root():
-    return {"service": "self-hosted-music-api"}
+    return {"service": "mix-player-api"}
 
 
 class ChromeExtensionCorsASGI:

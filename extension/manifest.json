@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Media player: Save to Library",
-  "version": "1.0.0",
-  "description": "Send YouTube videos to your self-hosted Media player",
+  "name": "Mix player: Save to Library",
+  "version": "2.0.0",
+  "description": "Send YouTube videos to your self-hosted Mix player",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://www.youtube.com/*", "http://*/*", "https://*/*"],
   "background": {
@@ -25,6 +25,6 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "Media player settings"
+    "default_title": "Mix player settings"
   }
 }

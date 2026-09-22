@@ -1,8 +1,8 @@
-# Media player
+# Mix player
 
 Self-hosted music library with a Spotify-style web UI, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks.
 
-**v1.0.0** is stable: YouTube extension is the only way to add music. No Lidarr, torrents, or Spotify sync.
+**v2.0.0**
 
 ## Quick start (server: pull images only)
 
@@ -46,7 +46,7 @@ If `docker compose pull` fails with unauthorized, make the GHCR packages **Publi
 
 1. Install the Chrome extension (Profile → Download extension)
 2. Extension connect → send API URL + token
-3. On YouTube, click **Save to Media player**
+3. On YouTube, click **Save to Mix player**
 4. Watch progress under Downloads
 
 Optional: admin can upload YouTube `cookies.txt` for age-restricted videos.
@@ -60,7 +60,7 @@ Optional: admin can upload YouTube `cookies.txt` for age-restricted videos.
 | postgres | 5432 | Database |
 | redis | 6379 | Celery / pub-sub |
 | worker | (internal) | yt-dlp downloads |
-| beat | (internal) | Celery beat (idle in v1) |
+| beat | (internal) | Celery beat |
 
 ## Local development
 

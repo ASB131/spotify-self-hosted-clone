@@ -11,7 +11,7 @@ const sans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Media player",
+  title: "Mix player",
   description: "Self-hosted music library and player",
   icons: {
     icon: "/favicon.png",

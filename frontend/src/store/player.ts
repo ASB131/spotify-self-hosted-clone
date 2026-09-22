@@ -14,7 +14,7 @@ import { recordPlay } from "@/lib/plays";
 
 export type RepeatMode = "off" | "all" | "one";
 
-const STORAGE_KEY = "resonance-player-v1";
+const STORAGE_KEY = "mix-player-v2";
 
 type PersistedPlayer = {
   queue: Track[];

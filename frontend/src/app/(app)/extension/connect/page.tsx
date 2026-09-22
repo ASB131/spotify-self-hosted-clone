@@ -23,10 +23,18 @@ export default function ExtensionConnectPage() {
     function onMessage(event: MessageEvent) {
       if (event.source !== window) return;
       const data = event.data;
-      if (data?.type === "resonance-extension-present" || data?.type === "media-player-extension-present") {
+      if (
+        data?.type === "mix-player-extension-present" ||
+        data?.type === "media-player-extension-present" ||
+        data?.type === "resonance-extension-present"
+      ) {
         setExtPresent(true);
       }
-      if (data?.type === "resonance-extension-auth-result" || data?.type === "media-player-extension-auth-result") {
+      if (
+        data?.type === "mix-player-extension-auth-result" ||
+        data?.type === "media-player-extension-auth-result" ||
+        data?.type === "resonance-extension-auth-result"
+      ) {
         if (data.ok) {
           setMsg("Connected. Credentials saved in the extension.");
         } else {
@@ -35,8 +43,9 @@ export default function ExtensionConnectPage() {
       }
     }
     window.addEventListener("message", onMessage);
-    window.postMessage({ type: "resonance-extension-ping" }, "*");
+    window.postMessage({ type: "mix-player-extension-ping" }, "*");
     window.postMessage({ type: "media-player-extension-ping" }, "*");
+    window.postMessage({ type: "resonance-extension-ping" }, "*");
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
@@ -53,8 +62,9 @@ export default function ExtensionConnectPage() {
     if (!token) return;
     setMsg("Sending to extension…");
     const payload = { apiBase: apiDirect, webBase, accessToken: token };
-    window.postMessage({ type: "resonance-extension-auth", ...payload }, "*");
+    window.postMessage({ type: "mix-player-extension-auth", ...payload }, "*");
     window.postMessage({ type: "media-player-extension-auth", ...payload }, "*");
+    window.postMessage({ type: "resonance-extension-auth", ...payload }, "*");
     setTimeout(() => {
       setMsg((m) =>
         m === "Sending to extension…"
@@ -112,7 +122,7 @@ export default function ExtensionConnectPage() {
         <Link href="/profile" className="text-spotify underline">
           Profile
         </Link>
-        , then on YouTube click <strong className="text-white">Save to Media player</strong>.
+        , then on YouTube click <strong className="text-white">Save to Mix player</strong>.
       </p>
     </div>
   );

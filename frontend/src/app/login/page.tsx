@@ -62,8 +62,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-black">
       <form onSubmit={submit} className="w-full max-w-md bg-[#121212] p-8 rounded-lg space-y-4 border border-white/5">
         <div className="flex flex-col items-center gap-3 mb-2">
-          <Image src="/logo.png" alt="Media player" width={72} height={72} className="rounded-full" priority />
-          <h1 className="text-2xl font-bold text-white">Media player</h1>
+          <Image src="/logo.png" alt="Mix player" width={72} height={72} className="rounded-full" priority />
+          <h1 className="text-2xl font-bold text-white">Mix player</h1>
         </div>
         <p className="text-sm text-muted text-center">
           First time? If no admin exists yet, go to{" "}
