@@ -19,6 +19,7 @@ function formatBytes(n: number) {
 export function TrackEditModal({ track, onClose, onSaved }: Props) {
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  const [album, setAlbum] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
     if (!track) return;
     setTitle(track.title);
     setArtist(track.artist);
+    setAlbum(track.album || "");
     setPreview(null);
     setError(null);
     setLocalTrack(track);
@@ -42,7 +44,11 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
     try {
       await api(`/api/v1/tracks/${track.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ title: title.trim(), artist: artist.trim() }),
+        body: JSON.stringify({
+          title: title.trim(),
+          artist: artist.trim(),
+          album: album.trim() || null,
+        }),
       });
       onSaved();
       onClose();
@@ -140,6 +146,9 @@ export function TrackEditModal({ track, onClose, onSaved }: Props) {
           </Field>
           <Field label="Artists (comma-separated)">
             <TextInput value={artist} onChange={(e) => setArtist(e.target.value)} />
+          </Field>
+          <Field label="Album">
+            <TextInput value={album} onChange={(e) => setAlbum(e.target.value)} placeholder="Optional" />
           </Field>
         </div>
       </div>

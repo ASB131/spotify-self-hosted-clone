@@ -238,6 +238,7 @@ def get_artist(
             name=p.name,
             description=p.description,
             is_liked_songs=p.is_liked_songs,
+            is_liked_playlist=bool(getattr(p, "is_liked_playlist", False)),
             track_count=len(p.tracks),
             cover_url=_cover(p),
         )

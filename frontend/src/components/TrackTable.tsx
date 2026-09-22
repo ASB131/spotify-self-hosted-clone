@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api, artUrl, type Playlist, type Track } from "@/lib/api";
 import { formatDuration, formatRelativeDate } from "@/lib/format";
 import { ArtistLinks } from "@/lib/artists";
@@ -12,6 +13,7 @@ type Props = {
   tracks: Track[];
   playlistId?: number;
   isLikedSongs?: boolean;
+  isLikedPlaylist?: boolean;
   onChanged?: () => void;
   onUpgrade?: (id: number) => void;
   emptyMessage?: string;
@@ -19,13 +21,20 @@ type Props = {
 };
 
 type MenuState = { x: number; y: number; track: Track } | null;
-type SortKey = "index" | "title" | "artist" | "added" | "duration";
+type SortKey = "index" | "title" | "artist" | "album" | "added" | "duration";
 type SortDir = "asc" | "desc";
+
+function albumKey(album: string | null | undefined, artist: string) {
+  const a = (album || "Unknown Album").trim();
+  const primary = (artist || "Unknown Artist").split(",")[0]?.trim() || "Unknown Artist";
+  return encodeURIComponent(`${a}|${primary}`);
+}
 
 export function TrackTable({
   tracks,
   playlistId,
   isLikedSongs,
+  isLikedPlaylist,
   onChanged,
   onUpgrade,
   emptyMessage,
@@ -33,11 +42,22 @@ export function TrackTable({
   const current = usePlayerStore((s) => s.current);
   const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
+  const playNext = usePlayerStore((s) => s.playNext);
   const [editing, setEditing] = useState<Track | null>(null);
+  const [bulkEdit, setBulkEdit] = useState(false);
   const [menu, setMenu] = useState<MenuState>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("added");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkAlbum, setBulkAlbum] = useState("");
+  const [bulkArtist, setBulkArtist] = useState("");
+  const [localTracks, setLocalTracks] = useState(tracks);
+
+  useEffect(() => {
+    setLocalTracks(tracks);
+    setSelected(new Set());
+  }, [tracks]);
 
   useEffect(() => {
     api<Playlist[]>("/api/v1/playlists")
@@ -46,19 +66,19 @@ export function TrackTable({
   }, []);
 
   const addTargets = useMemo(
-    () => playlists.filter((p) => !p.is_liked_songs && p.id !== playlistId),
+    () => playlists.filter((p) => !p.is_liked_songs && !p.is_liked_playlist && p.id !== playlistId),
     [playlists, playlistId]
   );
 
   const canRemoveFromPlaylist = !!playlistId && !isLikedSongs;
 
   const sorted = useMemo(() => {
-    const copy = [...tracks];
+    const copy = [...localTracks];
     const mul = sortDir === "asc" ? 1 : -1;
     copy.sort((a, b) => {
       if (sortKey === "index") {
-        const ia = tracks.indexOf(a);
-        const ib = tracks.indexOf(b);
+        const ia = localTracks.indexOf(a);
+        const ib = localTracks.indexOf(b);
         return (ia - ib) * mul;
       }
       if (sortKey === "title") {
@@ -66,6 +86,9 @@ export function TrackTable({
       }
       if (sortKey === "artist") {
         return (a.artist || "").localeCompare(b.artist || "", undefined, { sensitivity: "base" }) * mul;
+      }
+      if (sortKey === "album") {
+        return (a.album || "").localeCompare(b.album || "", undefined, { sensitivity: "base" }) * mul;
       }
       if (sortKey === "added") {
         const ta = a.added_at ? new Date(a.added_at).getTime() : 0;
@@ -77,7 +100,7 @@ export function TrackTable({
       return (da - db) * mul;
     });
     return copy;
-  }, [tracks, sortKey, sortDir]);
+  }, [localTracks, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -85,6 +108,37 @@ export function TrackTable({
     } else {
       setSortKey(key);
       setSortDir(key === "added" || key === "duration" ? "desc" : "asc");
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === sorted.length) setSelected(new Set());
+    else setSelected(new Set(sorted.map((t) => t.id)));
+  }
+
+  async function toggleLike(track: Track) {
+    const liked = !!track.is_liked;
+    try {
+      if (liked) {
+        await api(`/api/v1/tracks/${track.id}/like`, { method: "DELETE" });
+      } else {
+        await api(`/api/v1/tracks/${track.id}/like`, { method: "POST" });
+      }
+      setLocalTracks((prev) =>
+        prev.map((t) => (t.id === track.id ? { ...t, is_liked: !liked } : t))
+      );
+      if (isLikedPlaylist && liked) onChanged?.();
+    } catch {
+      /* ignore */
     }
   }
 
@@ -102,7 +156,30 @@ export function TrackTable({
   async function removeFromPlaylist(trackId: number) {
     if (!playlistId || isLikedSongs) return;
     try {
-      await api(`/api/v1/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
+      if (isLikedPlaylist) {
+        await api(`/api/v1/tracks/${trackId}/like`, { method: "DELETE" });
+      } else {
+        await api(`/api/v1/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
+      }
+      onChanged?.();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function applyBulk() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const body: { track_ids: number[]; album?: string; artist?: string } = { track_ids: ids };
+    if (bulkAlbum.trim()) body.album = bulkAlbum.trim();
+    if (bulkArtist.trim()) body.artist = bulkArtist.trim();
+    if (!body.album && !body.artist) return;
+    try {
+      await api("/api/v1/tracks/bulk", { method: "PATCH", body: JSON.stringify(body) });
+      setBulkEdit(false);
+      setBulkAlbum("");
+      setBulkArtist("");
+      setSelected(new Set());
       onChanged?.();
     } catch {
       /* ignore */
@@ -111,6 +188,23 @@ export function TrackTable({
 
   const menuItems: ContextMenuItem[] = menu
     ? [
+        {
+          id: "play-next",
+          label: "Play next",
+          onClick: () => playNext(menu.track),
+        },
+        {
+          id: "queue",
+          label: "Add to queue",
+          onClick: () => addToQueue(menu.track),
+        },
+        {
+          id: "like",
+          label: menu.track.is_liked ? "Remove from Liked Songs" : "Add to Liked Songs",
+          onClick: () => {
+            void toggleLike(menu.track);
+          },
+        },
         {
           id: "add-playlist",
           label: "Add to playlist",
@@ -129,7 +223,7 @@ export function TrackTable({
           ? [
               {
                 id: "remove",
-                label: "Remove from playlist",
+                label: isLikedPlaylist ? "Remove from Liked Songs" : "Remove from playlist",
                 danger: true,
                 onClick: () => {
                   void removeFromPlaylist(menu.track.id);
@@ -137,35 +231,113 @@ export function TrackTable({
               } satisfies ContextMenuItem,
             ]
           : []),
-        {
-          id: "queue",
-          label: "Add to queue",
-          onClick: () => addToQueue(menu.track),
-        },
       ]
     : [];
 
-  if (tracks.length === 0) {
+  if (localTracks.length === 0) {
     return <p className="text-sm text-muted py-8">{emptyMessage || "No songs yet."}</p>;
   }
 
   return (
     <>
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-md bg-[#282828] px-3 py-2 text-sm">
+          <span className="text-muted">{selected.size} selected</span>
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
+            onClick={() => playNext(sorted.filter((t) => selected.has(t.id)))}
+          >
+            Play next
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
+            onClick={() => addToQueue(sorted.filter((t) => selected.has(t.id)))}
+          >
+            Add to queue
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
+            onClick={() => setBulkEdit(true)}
+          >
+            Edit metadata
+          </button>
+          <button type="button" className="text-muted hover:text-white ml-auto" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {bulkEdit && (
+        <div className="mb-4 rounded-md border border-white/10 p-4 space-y-3 bg-[#181818]">
+          <p className="text-sm font-semibold">Bulk edit ({selected.size} songs)</p>
+          <label className="block text-xs text-muted">
+            Album
+            <input
+              value={bulkAlbum}
+              onChange={(e) => setBulkAlbum(e.target.value)}
+              className="mt-1 w-full bg-[#242424] rounded-md px-3 py-2 text-sm text-white outline-none"
+              placeholder="Leave blank to keep"
+            />
+          </label>
+          <label className="block text-xs text-muted">
+            Artist
+            <input
+              value={bulkArtist}
+              onChange={(e) => setBulkArtist(e.target.value)}
+              className="mt-1 w-full bg-[#242424] rounded-md px-3 py-2 text-sm text-white outline-none"
+              placeholder="Leave blank to keep"
+            />
+          </label>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setBulkEdit(false)} className="text-sm text-muted px-3 py-1.5">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void applyBulk()}
+              className="text-sm font-bold bg-spotify text-black rounded-full px-4 py-1.5"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="w-full">
         <table className="w-full text-sm border-collapse table-fixed">
           <thead className="sticky top-0 z-10 bg-surface/95 backdrop-blur">
             <tr className="text-muted border-b border-white/10 text-xs uppercase tracking-wider">
-              <SortTh active={sortKey === "index"} dir={sortDir} onClick={() => toggleSort("index")} className="w-12 text-right pr-4">
+              <th className="w-10 py-2">
+                <input
+                  type="checkbox"
+                  checked={selected.size > 0 && selected.size === sorted.length}
+                  onChange={toggleSelectAll}
+                  aria-label="Select all"
+                  className="accent-spotify"
+                />
+              </th>
+              <SortTh active={sortKey === "index"} dir={sortDir} onClick={() => toggleSort("index")} className="w-10 text-right pr-2">
                 #
               </SortTh>
               <SortTh active={sortKey === "title"} dir={sortDir} onClick={() => toggleSort("title")} className="text-left">
                 Title
               </SortTh>
               <SortTh
+                active={sortKey === "album"}
+                dir={sortDir}
+                onClick={() => toggleSort("album")}
+                className="text-left hidden lg:table-cell w-36"
+              >
+                Album
+              </SortTh>
+              <SortTh
                 active={sortKey === "added"}
                 dir={sortDir}
                 onClick={() => toggleSort("added")}
-                className="text-left hidden md:table-cell w-40"
+                className="text-left hidden md:table-cell w-32"
               >
                 Date added
               </SortTh>
@@ -173,7 +345,7 @@ export function TrackTable({
                 active={sortKey === "duration"}
                 dir={sortDir}
                 onClick={() => toggleSort("duration")}
-                className="text-right w-20 pr-4"
+                className="text-right w-24 pr-4"
                 ariaLabel="Duration"
               >
                 <ClockIcon />
@@ -193,14 +365,23 @@ export function TrackTable({
                   }}
                   className="group h-14 border-b border-transparent hover:bg-white/[0.08]"
                 >
-                  <td className="text-right pr-4 tabular-nums text-muted group-hover:text-white w-12">
+                  <td className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(t.id)}
+                      onChange={() => toggleSelect(t.id)}
+                      aria-label={`Select ${t.title}`}
+                      className="accent-spotify"
+                    />
+                  </td>
+                  <td className="text-right pr-2 tabular-nums text-muted group-hover:text-white w-10">
                     <span className={active ? "text-spotify" : ""}>{i + 1}</span>
                   </td>
                   <td className="py-2 pr-2">
                     <div className="flex items-center gap-3 min-w-0">
                       <button
                         type="button"
-                        onClick={() => playTrackInContext(t, sorted)}
+                        onClick={() => playTrackInContext(t, sorted, playlistId)}
                         className="w-10 h-10 shrink-0 bg-black/40 overflow-hidden rounded-sm"
                         aria-label={`Play ${t.title}`}
                       >
@@ -214,7 +395,7 @@ export function TrackTable({
                       <div className="min-w-0">
                         <button
                           type="button"
-                          onClick={() => playTrackInContext(t, sorted)}
+                          onClick={() => playTrackInContext(t, sorted, playlistId)}
                           className={`block truncate font-normal text-left hover:underline ${
                             active ? "text-spotify" : "text-white"
                           }`}
@@ -225,11 +406,31 @@ export function TrackTable({
                       </div>
                     </div>
                   </td>
+                  <td className="py-2 text-muted hidden lg:table-cell text-sm truncate">
+                    {t.album ? (
+                      <Link
+                        href={`/album/${albumKey(t.album, t.artist)}`}
+                        className="hover:underline hover:text-white"
+                      >
+                        {t.album}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="py-2 text-muted hidden md:table-cell text-sm">
                     {formatRelativeDate(t.added_at)}
                   </td>
                   <td className="py-2 text-right text-muted pr-4">
-                    <div className="inline-flex items-center justify-end gap-2">
+                    <div className="inline-flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void toggleLike(t)}
+                        className={`p-1.5 ${t.is_liked ? "text-spotify opacity-100" : "text-muted opacity-0 group-hover:opacity-100 hover:text-white"}`}
+                        aria-label={t.is_liked ? "Unlike" : "Like"}
+                      >
+                        <HeartIcon filled={!!t.is_liked} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
@@ -262,6 +463,14 @@ export function TrackTable({
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={() => onChanged?.()} />
     </>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 13.5S2.5 10 2.5 6.2A2.95 2.95 0 0 1 8 4.1a2.95 2.95 0 0 1 5.5 2.1C13.5 10 8 13.5 8 13.5z" />
+    </svg>
   );
 }
 

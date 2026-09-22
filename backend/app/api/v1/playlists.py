@@ -33,12 +33,13 @@ def _playlist_public(p: Playlist) -> PlaylistPublic:
         name=p.name,
         description=p.description,
         is_liked_songs=p.is_liked_songs,
+        is_liked_playlist=bool(getattr(p, "is_liked_playlist", False)),
         track_count=len(p.tracks),
         cover_url=f"/api/v1/playlists/{p.id}/cover" if p.cover_relative_path else None,
     )
 
 
-def _track_public_from_pt(pt: PlaylistTrack, added_via: str | None = None) -> TrackPublic:
+def _track_public_from_pt(pt: PlaylistTrack, is_liked: bool = False, added_via: str | None = None) -> TrackPublic:
     t = pt.track
     return TrackPublic(
         id=t.id,
@@ -52,6 +53,7 @@ def _track_public_from_pt(pt: PlaylistTrack, added_via: str | None = None) -> Tr
         added_via=added_via,
         art_url=f"/api/v1/tracks/{t.id}/art" if t.art_relative_path else None,
         added_at=pt.added_at,
+        is_liked=is_liked,
     )
 
 
@@ -72,7 +74,7 @@ def list_playlists(user: User = Depends(get_current_user), db: Session = Depends
         select(Playlist)
         .where(Playlist.user_id == user.id)
         .options(selectinload(Playlist.tracks))
-        .order_by(Playlist.is_liked_songs.desc(), Playlist.name)
+        .order_by(Playlist.is_liked_songs.desc(), Playlist.is_liked_playlist.desc(), Playlist.name)
     ).all()
     return [_playlist_public(p) for p in rows]
 
@@ -88,6 +90,7 @@ def create_playlist(body: PlaylistCreate, user: User = Depends(get_current_user)
         name=pl.name,
         description=pl.description,
         is_liked_songs=False,
+        is_liked_playlist=False,
         track_count=0,
         cover_url=None,
     )
@@ -106,8 +109,8 @@ def update_playlist(
     db: Session = Depends(get_db),
 ):
     pl = _owned_playlist(db, user, playlist_id)
-    if pl.is_liked_songs and body.name is not None:
-        raise HTTPException(status_code=400, detail="Cannot rename All Songs")
+    if (pl.is_liked_songs or pl.is_liked_playlist) and body.name is not None:
+        raise HTTPException(status_code=400, detail="Cannot rename system playlist")
     if body.name is not None:
         pl.name = body.name.strip()
     if body.description is not None:
@@ -152,7 +155,7 @@ def add_track_to_playlist(
     )
     if not pt:
         raise HTTPException(status_code=500, detail="Failed to add track")
-    return _track_public_from_pt(pt)
+    return _track_public_from_pt(pt, is_liked=bool(owned.is_liked), added_via=owned.added_via)
 
 
 @router.delete("/{playlist_id}/tracks/{track_id}")
@@ -168,6 +171,15 @@ def remove_track_from_playlist(
             status_code=400,
             detail="Cannot remove tracks from All Songs — delete the song from your library instead",
         )
+    if pl.is_liked_playlist:
+        from app.models.user_track import UserTrack
+
+        link = db.scalar(
+            select(UserTrack).where(UserTrack.user_id == user.id, UserTrack.track_id == track_id)
+        )
+        if link:
+            link.is_liked = False
+            db.add(link)
     pt = db.scalar(
         select(PlaylistTrack).where(
             PlaylistTrack.playlist_id == pl.id, PlaylistTrack.track_id == track_id
@@ -188,8 +200,8 @@ async def upload_playlist_cover(
     db: Session = Depends(get_db),
 ):
     pl = _owned_playlist(db, user, playlist_id)
-    if pl.is_liked_songs:
-        raise HTTPException(status_code=400, detail="Cannot change All Songs cover")
+    if pl.is_liked_songs or pl.is_liked_playlist:
+        raise HTTPException(status_code=400, detail="Cannot change system playlist cover")
     ctype = (file.content_type or "").lower()
     if ctype not in ALLOWED_IMAGE:
         raise HTTPException(status_code=400, detail="Cover must be JPEG, PNG, or WebP")
@@ -243,10 +255,17 @@ def playlist_tracks(playlist_id: int, user: User = Depends(get_current_user), db
         reverse=True,
     )
     via_map = {
-        ut.track_id: ut.added_via
+        ut.track_id: (ut.added_via, ut.is_liked)
         for ut in db.scalars(select(UserTrack).where(UserTrack.user_id == user.id)).all()
     }
-    return [_track_public_from_pt(pt, via_map.get(pt.track_id)) for pt in ordered]
+    return [
+        _track_public_from_pt(
+            pt,
+            is_liked=via_map.get(pt.track_id, (None, False))[1],
+            added_via=via_map.get(pt.track_id, (None, False))[0],
+        )
+        for pt in ordered
+    ]
 
 
 @router.delete("/{playlist_id}")
@@ -254,8 +273,8 @@ def delete_playlist(playlist_id: int, user: User = Depends(get_current_user), db
     pl = db.get(Playlist, playlist_id)
     if not pl or pl.user_id != user.id:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    if pl.is_liked_songs:
-        raise HTTPException(status_code=400, detail="Cannot delete All Songs")
+    if pl.is_liked_songs or pl.is_liked_playlist:
+        raise HTTPException(status_code=400, detail="Cannot delete system playlist")
     if pl.cover_relative_path:
         try:
             path = art_file_path(pl.cover_relative_path)

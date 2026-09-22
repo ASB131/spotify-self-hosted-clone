@@ -27,7 +27,7 @@ function formatGb(n: number) {
   return `${Math.round(gb)} GB`;
 }
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   useAmpersandKeeps();
   const pathname = usePathname();
   const router = useRouter();
@@ -75,7 +75,15 @@ export function Sidebar() {
   }, [tracks]);
 
   const q = query.trim().toLowerCase();
-  const visiblePlaylists = playlists.filter((p) => !q || p.name.toLowerCase().includes(q));
+  const visiblePlaylists = playlists
+    .filter((p) => !q || p.name.toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => {
+      const rank = (p: Playlist) => (p.is_liked_songs ? 0 : p.is_liked_playlist ? 1 : 2);
+      const d = rank(a) - rank(b);
+      if (d !== 0) return d;
+      return a.name.localeCompare(b.name);
+    });
   const visibleArtists = artists.filter((a) => !q || a.toLowerCase().includes(q));
 
   async function createPlaylist(e: React.FormEvent) {
@@ -118,7 +126,7 @@ export function Sidebar() {
         {
           id: "settings",
           label: "Playlist settings",
-          disabled: menu.playlist.is_liked_songs,
+          disabled: menu.playlist.is_liked_songs || !!menu.playlist.is_liked_playlist,
           onClick: () => setEditing(menu.playlist),
         },
       ]
@@ -130,9 +138,13 @@ export function Sidebar() {
       : 0;
 
   return (
-    <aside className="w-[280px] shrink-0 flex flex-col rounded-lg bg-[#121212] overflow-hidden">
+    <aside className="w-full md:w-[280px] h-full shrink-0 flex flex-col rounded-lg bg-[#121212] overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 pt-4 pb-3">
-        <Link href="/library" className="flex items-center gap-2 text-white font-bold text-base hover:text-white">
+        <Link
+          href="/library"
+          onClick={() => onNavigate?.()}
+          className="flex items-center gap-2 text-white font-bold text-base hover:text-white"
+        >
           <LibraryIcon />
           Your Library
         </Link>
@@ -201,6 +213,7 @@ export function Sidebar() {
                 <Link
                   key={p.id}
                   href={href}
+                  onClick={() => onNavigate?.()}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({ x: e.clientX, y: e.clientY, playlist: p });
@@ -211,12 +224,16 @@ export function Sidebar() {
                 >
                   <span
                     className={`h-12 w-12 rounded shrink-0 flex items-center justify-center text-lg overflow-hidden ${
-                      p.is_liked_songs
-                        ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] text-white"
-                        : "bg-[#333] text-muted"
+                      p.is_liked_playlist
+                        ? "bg-gradient-to-br from-[#450af5] to-[#c74bef] text-white"
+                        : p.is_liked_songs
+                          ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] text-white"
+                          : "bg-[#333] text-muted"
                     }`}
                   >
-                    {p.is_liked_songs ? (
+                    {p.is_liked_playlist ? (
+                      "♥"
+                    ) : p.is_liked_songs ? (
                       "♪"
                     ) : p.cover_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -228,13 +245,13 @@ export function Sidebar() {
                   <span className="min-w-0">
                     <span
                       className={`block truncate text-sm font-medium ${
-                        active || p.is_liked_songs ? "text-spotify" : "text-white"
+                        active || p.is_liked_songs || p.is_liked_playlist ? "text-spotify" : "text-white"
                       }`}
                     >
                       {p.name}
                     </span>
                     <span className="block truncate text-xs text-muted">
-                      {p.is_liked_songs && <PinIcon />}
+                      {(p.is_liked_songs || p.is_liked_playlist) && <PinIcon />}
                       Playlist · {p.track_count} song{p.track_count === 1 ? "" : "s"}
                     </span>
                   </span>
@@ -254,6 +271,7 @@ export function Sidebar() {
                 <Link
                   key={name}
                   href={href}
+                  onClick={() => onNavigate?.()}
                   className={`flex items-center gap-3 rounded-md px-2 py-2 ${
                     active ? "bg-white/10" : "hover:bg-white/5"
                   }`}

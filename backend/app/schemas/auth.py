@@ -70,6 +70,7 @@ class TrackPublic(BaseModel):
     added_via: Optional[str] = None
     art_url: Optional[str] = None
     added_at: Optional[datetime] = None
+    is_liked: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -79,6 +80,7 @@ class PlaylistPublic(BaseModel):
     name: str
     description: Optional[str]
     is_liked_songs: bool
+    is_liked_playlist: bool = False
     track_count: int = 0
     cover_url: Optional[str] = None
 
@@ -88,6 +90,14 @@ class PlaylistPublic(BaseModel):
 class TrackUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=512)
     artist: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    album: Optional[str] = Field(default=None, max_length=512)
+
+
+class TrackBulkUpdate(BaseModel):
+    track_ids: List[int] = Field(min_length=1, max_length=500)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    artist: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    album: Optional[str] = Field(default=None, max_length=512)
 
 
 class PlaylistUpdate(BaseModel):

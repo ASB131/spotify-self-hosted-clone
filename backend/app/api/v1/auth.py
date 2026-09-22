@@ -104,6 +104,15 @@ def bootstrap_admin(body: BootstrapAdminRequest, response: Response, db: Session
             is_liked_songs=True,
         )
     )
+    db.add(
+        Playlist(
+            user_id=user.id,
+            name="Liked Songs",
+            description="Songs you hearted",
+            is_liked_songs=False,
+            is_liked_playlist=True,
+        )
+    )
     db.commit()
     db.refresh(user)
     access = create_access_token(user.id)
@@ -147,6 +156,15 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
             name="All Songs",
             description="Every track in your library",
             is_liked_songs=True,
+        )
+    )
+    db.add(
+        Playlist(
+            user_id=user.id,
+            name="Liked Songs",
+            description="Songs you hearted",
+            is_liked_songs=False,
+            is_liked_playlist=True,
         )
     )
     db.commit()

@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
-import { getSharedAudio } from "@/lib/playerAudio";
-import { artUrl } from "@/lib/api";
+import { getBothAudios, getSharedAudio, onActiveAudioChange } from "@/lib/playerAudio";
+import { api, artUrl } from "@/lib/api";
 import { ArtistLinks } from "@/lib/artists";
 
 function fmt(sec: number) {
@@ -24,6 +24,7 @@ export function AudioPlayerBar() {
     repeat,
     queue,
     queuePanelOpen,
+    crossfadeSeconds,
     toggle,
     next,
     prev,
@@ -38,6 +39,8 @@ export function AudioPlayerBar() {
     hydrate,
     persist,
     toggleQueuePanel,
+    setCrossfadeSeconds,
+    tickCrossfade,
   } = usePlayerStore();
 
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,43 +51,95 @@ export function AudioPlayerBar() {
     bindAudio(audio);
     hydrate();
 
-    const onTime = () => {
-      setProgress(audio.currentTime);
-      if (persistTimer.current) clearTimeout(persistTimer.current);
-      persistTimer.current = setTimeout(() => persist(), 1500);
+    const attach = (el: HTMLAudioElement) => {
+      const onTime = () => {
+        if (el !== getSharedAudio()) return;
+        setProgress(el.currentTime);
+        tickCrossfade(el.currentTime, el.duration || 0);
+        if (persistTimer.current) clearTimeout(persistTimer.current);
+        persistTimer.current = setTimeout(() => persist(), 1500);
+      };
+      const onMeta = () => {
+        if (el !== getSharedAudio()) return;
+        setDuration(el.duration || 0);
+      };
+      const onEnd = () => {
+        if (el !== getSharedAudio()) return;
+        onEnded();
+      };
+      const onPlay = () => {
+        if (el !== getSharedAudio()) return;
+        usePlayerStore.setState({ isPlaying: true });
+      };
+      const onPause = () => {
+        if (el !== getSharedAudio()) return;
+        usePlayerStore.setState({ isPlaying: false });
+      };
+      el.addEventListener("timeupdate", onTime);
+      el.addEventListener("loadedmetadata", onMeta);
+      el.addEventListener("ended", onEnd);
+      el.addEventListener("play", onPlay);
+      el.addEventListener("pause", onPause);
+      return () => {
+        el.removeEventListener("timeupdate", onTime);
+        el.removeEventListener("loadedmetadata", onMeta);
+        el.removeEventListener("ended", onEnd);
+        el.removeEventListener("play", onPlay);
+        el.removeEventListener("pause", onPause);
+      };
     };
-    const onMeta = () => setDuration(audio.duration || 0);
-    const onEnd = () => onEnded();
-    const onPlay = () => usePlayerStore.setState({ isPlaying: true });
-    const onPause = () => usePlayerStore.setState({ isPlaying: false });
 
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("ended", onEnd);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
+    const both = getBothAudios();
+    const cleanups: (() => void)[] = [];
+    if (both) {
+      for (const el of both) cleanups.push(attach(el));
+    } else {
+      cleanups.push(attach(audio));
+    }
+
+    onActiveAudioChange((el) => bindAudio(el));
 
     const onUnload = () => persist();
     window.addEventListener("beforeunload", onUnload);
-    document.addEventListener("visibilitychange", () => {
+    const onVis = () => {
       if (document.visibilityState === "hidden") persist();
-    });
+    };
+    document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("ended", onEnd);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
+      cleanups.forEach((c) => c());
+      onActiveAudioChange(null);
       window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("visibilitychange", onVis);
       if (persistTimer.current) clearTimeout(persistTimer.current);
-      // Do NOT pause or destroy shared audio — navigation must keep playing
     };
-  }, [bindAudio, hydrate, persist, setDuration, setProgress, onEnded]);
+  }, [bindAudio, hydrate, persist, setDuration, setProgress, onEnded, tickCrossfade]);
+
+  async function toggleLike() {
+    if (!current) return;
+    const liked = !!current.is_liked;
+    try {
+      if (liked) {
+        await api(`/api/v1/tracks/${current.id}/like`, { method: "DELETE" });
+        usePlayerStore.setState({
+          current: { ...current, is_liked: false },
+          queue: queue.map((t) => (t.id === current.id ? { ...t, is_liked: false } : t)),
+        });
+      } else {
+        await api(`/api/v1/tracks/${current.id}/like`, { method: "POST" });
+        usePlayerStore.setState({
+          current: { ...current, is_liked: true },
+          queue: queue.map((t) => (t.id === current.id ? { ...t, is_liked: true } : t)),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   if (!current) {
     return (
-      <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0 player-bar">
+      <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0 player-bar pb-[env(safe-area-inset-bottom)]">
         Select a track to play
       </footer>
     );
@@ -94,49 +149,58 @@ export function AudioPlayerBar() {
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (
-    <footer className="h-[90px] rounded-lg bg-panel px-3 grid grid-cols-[1fr_minmax(280px,40%)_1fr] items-center gap-3 shrink-0 player-bar">
-      <div className="flex items-center gap-3 min-w-0">
+    <footer className="min-h-[72px] md:h-[90px] rounded-lg bg-panel px-2 sm:px-3 py-2 grid grid-cols-[1fr_auto] md:grid-cols-[1fr_minmax(240px,40%)_1fr] items-center gap-2 md:gap-3 shrink-0 player-bar pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="h-14 w-14 rounded-sm object-cover shrink-0 transition-transform duration-300 hover:scale-[1.02]" />
+          <img src={cover} alt="" className="h-12 w-12 md:h-14 md:w-14 rounded-sm object-cover shrink-0" />
         ) : (
-          <div className="h-14 w-14 rounded-sm bg-white/10 shrink-0" />
+          <div className="h-12 w-12 md:h-14 md:w-14 rounded-sm bg-white/10 shrink-0" />
         )}
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-white">{current.title}</p>
           <ArtistLinks artist={current.artist} className="truncate text-xs text-muted block" linkClassName="text-muted" />
         </div>
+        <button
+          type="button"
+          onClick={() => void toggleLike()}
+          className={`shrink-0 p-2 ${current.is_liked ? "text-spotify" : "text-muted hover:text-white"}`}
+          aria-label={current.is_liked ? "Unlike" : "Like"}
+          aria-pressed={!!current.is_liked}
+        >
+          <HeartIcon filled={!!current.is_liked} />
+        </button>
       </div>
 
-      <div className="flex flex-col items-center gap-1.5 min-w-0">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col items-center gap-1 min-w-0 col-span-2 md:col-span-1 order-3 md:order-none">
+        <div className="flex items-center gap-3 md:gap-4">
           <button
             type="button"
             onClick={toggleShuffle}
-            className={`transition-colors ${shuffle ? "text-spotify" : "text-muted hover:text-white"}`}
+            className={`hidden sm:inline transition-colors ${shuffle ? "text-spotify" : "text-muted hover:text-white"}`}
             aria-label="Shuffle"
             aria-pressed={shuffle}
           >
             <IconShuffle />
           </button>
-          <button type="button" onClick={prev} className="text-muted hover:text-white transition-colors" aria-label="Previous">
+          <button type="button" onClick={prev} className="text-muted hover:text-white transition-colors p-1" aria-label="Previous">
             <IconPrev />
           </button>
           <button
             type="button"
             onClick={toggle}
-            className="h-8 w-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
+            className="h-9 w-9 md:h-8 md:w-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
             aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? <IconPause /> : <IconPlay />}
           </button>
-          <button type="button" onClick={next} className="text-muted hover:text-white transition-colors" aria-label="Next">
+          <button type="button" onClick={next} className="text-muted hover:text-white transition-colors p-1" aria-label="Next">
             <IconNext />
           </button>
           <button
             type="button"
             onClick={cycleRepeat}
-            className={`relative transition-colors ${repeat !== "off" ? "text-spotify" : "text-muted hover:text-white"}`}
+            className={`relative hidden sm:inline transition-colors ${repeat !== "off" ? "text-spotify" : "text-muted hover:text-white"}`}
             aria-label="Repeat"
           >
             <IconRepeat />
@@ -146,7 +210,7 @@ export function AudioPlayerBar() {
           </button>
         </div>
         <div className="flex items-center gap-2 w-full text-[11px] text-muted tabular-nums">
-          <span className="w-10 text-right">{fmt(progress)}</span>
+          <span className="w-8 sm:w-10 text-right">{fmt(progress)}</span>
           <div className="relative flex-1 h-3 flex items-center group">
             <div className="absolute inset-x-0 h-1 rounded-full bg-white/20 overflow-hidden">
               <div
@@ -165,15 +229,30 @@ export function AudioPlayerBar() {
               aria-label="Seek"
             />
           </div>
-          <span className="w-10">{fmt(duration)}</span>
+          <span className="w-8 sm:w-10">{fmt(duration)}</span>
         </div>
       </div>
 
-      <div className="flex justify-end items-center gap-3 min-w-0">
+      <div className="flex justify-end items-center gap-2 sm:gap-3 min-w-0">
+        <label className="hidden lg:flex items-center gap-1.5 text-[10px] text-muted" title="Crossfade (0 = gapless)">
+          <span className="whitespace-nowrap">Fade</span>
+          <select
+            value={crossfadeSeconds}
+            onChange={(e) => setCrossfadeSeconds(Number(e.target.value))}
+            className="bg-[#282828] text-white text-xs rounded px-1 py-0.5 outline-none"
+            aria-label="Crossfade seconds"
+          >
+            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "Off" : `${n}s`}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={toggleQueuePanel}
-          className={`relative transition-colors ${queuePanelOpen ? "text-spotify" : "text-muted hover:text-white"}`}
+          className={`relative transition-colors p-1 ${queuePanelOpen ? "text-spotify" : "text-muted hover:text-white"}`}
           aria-label="Queue"
           aria-pressed={queuePanelOpen}
           title="Queue"
@@ -185,7 +264,9 @@ export function AudioPlayerBar() {
             </span>
           )}
         </button>
-        <IconVolume />
+        <span className="hidden sm:inline">
+          <IconVolume />
+        </span>
         <input
           type="range"
           min={0}
@@ -193,11 +274,19 @@ export function AudioPlayerBar() {
           step={0.01}
           value={volume}
           onChange={(e) => setVolume(Number(e.target.value))}
-          className="w-24 accent-white"
+          className="hidden sm:block w-20 md:w-24 accent-white"
           aria-label="Volume"
         />
       </div>
     </footer>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 13.5S2.5 10 2.5 6.2A2.95 2.95 0 0 1 8 4.1a2.95 2.95 0 0 1 5.5 2.1C13.5 10 8 13.5 8 13.5z" />
+    </svg>
   );
 }
 

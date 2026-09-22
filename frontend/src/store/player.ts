@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import type { Track } from "@/lib/api";
-import { streamUrl } from "@/lib/api";
-import { getSharedAudio } from "@/lib/playerAudio";
+import {
+  crossfadeToIdle,
+  getCrossfadeSeconds,
+  getSharedAudio,
+  loadOnActive,
+  pauseAll,
+  preloadIdle,
+  promoteIdle,
+  setCrossfadeSeconds as setAudioCrossfade,
+} from "@/lib/playerAudio";
 import { recordPlay } from "@/lib/plays";
 
 export type RepeatMode = "off" | "all" | "one";
@@ -17,6 +25,8 @@ type PersistedPlayer = {
   shuffle: boolean;
   repeat: RepeatMode;
   wasPlaying: boolean;
+  crossfadeSeconds?: number;
+  sourcePlaylistId?: number | null;
 };
 
 type PlayerState = {
@@ -31,24 +41,30 @@ type PlayerState = {
   duration: number;
   hydrated: boolean;
   audioRef: HTMLAudioElement | null;
+  crossfadeSeconds: number;
+  sourcePlaylistId: number | null;
   bindAudio: (el: HTMLAudioElement | null) => void;
   hydrate: () => void;
   persist: () => void;
   queuePanelOpen: boolean;
   setQueuePanelOpen: (open: boolean) => void;
   toggleQueuePanel: () => void;
-  setQueue: (tracks: Track[], startIndex?: number) => void;
-  playTrackInContext: (track: Track, context: Track[]) => void;
+  setCrossfadeSeconds: (s: number) => void;
+  setSourcePlaylistId: (id: number | null) => void;
+  setQueue: (tracks: Track[], startIndex?: number, playlistId?: number | null) => void;
+  playTrackInContext: (track: Track, context: Track[], playlistId?: number | null) => void;
   addToQueue: (tracks: Track | Track[]) => void;
+  playNext: (tracks: Track | Track[]) => void;
   removeFromQueue: (index: number) => void;
   reorderQueue: (fromIndex: number, toIndex: number) => void;
   playAt: (index: number) => void;
   clearQueue: () => void;
+  clearQueueFully: () => void;
   setTrack: (track: Track | null) => void;
   play: () => void;
   pause: () => void;
   toggle: () => void;
-  next: () => void;
+  next: (opts?: { fromCrossfade?: boolean }) => void;
   prev: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
@@ -57,33 +73,35 @@ type PlayerState = {
   setDuration: (d: number) => void;
   seek: (seconds: number) => void;
   onEnded: () => void;
+  tickCrossfade: (currentTime: number, duration: number) => void;
 };
 
-function loadTrack(audio: HTMLAudioElement | null, track: Track | null, opts?: { autoplay?: boolean; seek?: number }) {
-  if (!audio || !track) return;
-  const autoplay = opts?.autoplay !== false;
-  const url = streamUrl(track);
-  const same = audio.dataset.trackId === String(track.id);
-  if (!same) {
-    audio.dataset.trackId = String(track.id);
-    audio.src = url;
-    audio.load();
+function resolveNextIndex(
+  queue: Track[],
+  queueIndex: number,
+  shuffle: boolean,
+  repeat: RepeatMode
+): number | null {
+  if (!queue.length) return null;
+  if (shuffle) {
+    if (queue.length === 1) return 0;
+    let nextIdx: number;
+    do {
+      nextIdx = Math.floor(Math.random() * queue.length);
+    } while (nextIdx === queueIndex);
+    return nextIdx;
   }
-  if (opts?.seek != null && Number.isFinite(opts.seek)) {
-    const seekTo = opts.seek;
-    const applySeek = () => {
-      try {
-        audio.currentTime = seekTo;
-      } catch {
-        /* ignore */
-      }
-    };
-    if (audio.readyState >= 1) applySeek();
-    else audio.addEventListener("loadedmetadata", applySeek, { once: true });
+  if (queueIndex >= queue.length - 1) {
+    if (repeat === "all") return 0;
+    return null;
   }
-  if (autoplay) {
-    audio.play().catch(() => usePlayerStore.setState({ isPlaying: false }));
-  }
+  return queueIndex + 1;
+}
+
+let crossfadeArmed = false;
+
+function loadTrack(track: Track | null, opts?: { autoplay?: boolean; seek?: number; volume?: number }) {
+  loadOnActive(track, opts);
 }
 
 function readPersisted(): PersistedPlayer | null {
@@ -110,11 +128,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   hydrated: false,
   audioRef: null,
   queuePanelOpen: false,
+  crossfadeSeconds: 0,
+  sourcePlaylistId: null,
 
   bindAudio: (el) => set({ audioRef: el }),
 
   setQueuePanelOpen: (open) => set({ queuePanelOpen: open }),
   toggleQueuePanel: () => set({ queuePanelOpen: !get().queuePanelOpen }),
+
+  setCrossfadeSeconds: (s) => {
+    const v = Math.max(0, Math.min(12, s));
+    setAudioCrossfade(v);
+    set({ crossfadeSeconds: v });
+    get().persist();
+  },
+
+  setSourcePlaylistId: (id) => set({ sourcePlaylistId: id }),
 
   persist: () => {
     if (typeof window === "undefined") return;
@@ -129,6 +158,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       shuffle: s.shuffle,
       repeat: s.repeat,
       wasPlaying: s.isPlaying,
+      crossfadeSeconds: s.crossfadeSeconds,
+      sourcePlaylistId: s.sourcePlaylistId,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -141,8 +172,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (get().hydrated) return;
     const audio = getSharedAudio();
     const saved = readPersisted();
+    const cf = saved?.crossfadeSeconds ?? 0;
+    setAudioCrossfade(cf);
     if (!saved?.current || !saved.queue?.length) {
-      set({ hydrated: true, audioRef: audio, volume: saved?.volume ?? 0.8 });
+      set({
+        hydrated: true,
+        audioRef: audio,
+        volume: saved?.volume ?? 0.8,
+        crossfadeSeconds: cf,
+        sourcePlaylistId: saved?.sourcePlaylistId ?? null,
+      });
       if (audio && saved?.volume != null) audio.volume = saved.volume;
       return;
     }
@@ -159,11 +198,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       shuffle: !!saved.shuffle,
       repeat: saved.repeat || "off",
       isPlaying: false,
+      crossfadeSeconds: cf,
+      sourcePlaylistId: saved.sourcePlaylistId ?? null,
     });
     if (audio) {
       audio.volume = saved.volume ?? 0.8;
-      loadTrack(audio, track, { autoplay: false, seek: saved.progress || 0 });
-      // Soft resume if it was playing (may be blocked until user gesture)
+      loadTrack(track, { autoplay: false, seek: saved.progress || 0, volume: saved.volume ?? 0.8 });
       if (saved.wasPlaying) {
         audio
           .play()
@@ -173,24 +213,41 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  setQueue: (tracks, startIndex = 0) => {
+  setQueue: (tracks, startIndex = 0, playlistId) => {
+    crossfadeArmed = false;
     if (!tracks.length) {
-      set({ queue: [], queueIndex: -1, current: null, isPlaying: false, progress: 0 });
+      pauseAll();
+      set({
+        queue: [],
+        queueIndex: -1,
+        current: null,
+        isPlaying: false,
+        progress: 0,
+        sourcePlaylistId: playlistId ?? null,
+      });
       get().persist();
       return;
     }
     const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
     const track = tracks[idx];
-    set({ queue: tracks, queueIndex: idx, current: track, progress: 0, isPlaying: true });
-    loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
-    recordPlay(track.id);
+    const pl = playlistId !== undefined ? playlistId : get().sourcePlaylistId;
+    set({
+      queue: tracks,
+      queueIndex: idx,
+      current: track,
+      progress: 0,
+      isPlaying: true,
+      sourcePlaylistId: pl ?? null,
+    });
+    loadTrack(track, { autoplay: true, volume: get().volume });
+    recordPlay(track.id, pl);
     get().persist();
   },
 
-  playTrackInContext: (track, context) => {
+  playTrackInContext: (track, context, playlistId) => {
     const idx = context.findIndex((t) => t.id === track.id);
-    if (idx >= 0) get().setQueue(context, idx);
-    else get().setQueue([track, ...context], 0);
+    if (idx >= 0) get().setQueue(context, idx, playlistId);
+    else get().setQueue([track, ...context], 0, playlistId);
   },
 
   addToQueue: (tracks) => {
@@ -205,12 +262,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().persist();
   },
 
+  playNext: (tracks) => {
+    const list = Array.isArray(tracks) ? tracks : [tracks];
+    if (!list.length) return;
+    const { queue, queueIndex, current } = get();
+    if (!queue.length || !current || queueIndex < 0) {
+      get().setQueue(list, 0);
+      return;
+    }
+    const next = [...queue];
+    next.splice(queueIndex + 1, 0, ...list);
+    set({ queue: next });
+    get().persist();
+  },
+
   removeFromQueue: (index) => {
     const { queue, queueIndex } = get();
     if (index < 0 || index >= queue.length) return;
     const nextQueue = queue.filter((_, i) => i !== index);
     if (!nextQueue.length) {
-      get().audioRef?.pause();
+      pauseAll();
       set({ queue: [], queueIndex: -1, current: null, isPlaying: false, progress: 0 });
       get().persist();
       return;
@@ -225,8 +296,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const track = nextQueue[nextIndex];
     set({ queue: nextQueue, queueIndex: nextIndex, current: track });
     if (shouldReload) {
+      crossfadeArmed = false;
       set({ progress: 0, isPlaying: true });
-      loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+      loadTrack(track, { autoplay: true, volume: get().volume });
     }
     get().persist();
   },
@@ -254,12 +326,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playAt: (index) => {
-    const { queue } = get();
+    const { queue, sourcePlaylistId } = get();
     if (index < 0 || index >= queue.length) return;
+    crossfadeArmed = false;
     const track = queue[index];
     set({ current: track, queueIndex: index, progress: 0, isPlaying: true });
-    loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
-    recordPlay(track.id);
+    loadTrack(track, { autoplay: true, volume: get().volume });
+    recordPlay(track.id, sourcePlaylistId);
     get().persist();
   },
 
@@ -273,22 +346,30 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().persist();
   },
 
+  clearQueueFully: () => {
+    crossfadeArmed = false;
+    pauseAll();
+    set({ queue: [], queueIndex: -1, current: null, isPlaying: false, progress: 0, duration: 0 });
+    get().persist();
+  },
+
   setTrack: (track) => {
+    crossfadeArmed = false;
     if (!track) {
-      get().audioRef?.pause();
+      pauseAll();
       set({ current: null, isPlaying: false, progress: 0 });
       get().persist();
       return;
     }
-    const { queue } = get();
+    const { queue, sourcePlaylistId } = get();
     const idx = queue.findIndex((t) => t.id === track.id);
     if (idx >= 0) {
       set({ current: track, queueIndex: idx, progress: 0, isPlaying: true });
     } else {
       set({ current: track, queue: [track], queueIndex: 0, progress: 0, isPlaying: true });
     }
-    loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
-    recordPlay(track.id);
+    loadTrack(track, { autoplay: true, volume: get().volume });
+    recordPlay(track.id, sourcePlaylistId);
     get().persist();
   },
 
@@ -309,45 +390,45 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().isPlaying ? get().pause() : get().play();
   },
 
-  next: () => {
-    const { queue, queueIndex, shuffle, repeat } = get();
-    if (!queue.length) return;
-    let nextIdx: number;
-    if (shuffle) {
-      if (queue.length === 1) nextIdx = 0;
-      else {
-        do {
-          nextIdx = Math.floor(Math.random() * queue.length);
-        } while (nextIdx === queueIndex);
-      }
-    } else if (queueIndex >= queue.length - 1) {
-      if (repeat === "all") nextIdx = 0;
-      else return;
-    } else {
-      nextIdx = queueIndex + 1;
-    }
+  next: (opts) => {
+    const { queue, queueIndex, shuffle, repeat, volume, sourcePlaylistId, crossfadeSeconds } = get();
+    const nextIdx = resolveNextIndex(queue, queueIndex, shuffle, repeat);
+    if (nextIdx == null) return;
     const track = queue[nextIdx];
+    crossfadeArmed = false;
     set({ current: track, queueIndex: nextIdx, progress: 0, isPlaying: true });
-    loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
-    recordPlay(track.id);
+
+    if (opts?.fromCrossfade && crossfadeSeconds > 0) {
+      crossfadeToIdle(track, volume, () => {
+        set({ audioRef: getSharedAudio() });
+      });
+    } else if (getCrossfadeSeconds() === 0 && opts?.fromCrossfade) {
+      promoteIdle(track, { autoplay: true, volume });
+      set({ audioRef: getSharedAudio() });
+    } else {
+      loadTrack(track, { autoplay: true, volume });
+    }
+
+    recordPlay(track.id, sourcePlaylistId);
     get().persist();
   },
 
   prev: () => {
-    const { queue, queueIndex, progress, audioRef } = get();
+    const { queue, queueIndex, progress, volume, sourcePlaylistId } = get();
     if (!queue.length) return;
-    const audio = audioRef || getSharedAudio();
+    const audio = get().audioRef || getSharedAudio();
     if (progress > 3 && audio) {
       audio.currentTime = 0;
       set({ progress: 0 });
       get().persist();
       return;
     }
+    crossfadeArmed = false;
     const prevIdx = queueIndex <= 0 ? queue.length - 1 : queueIndex - 1;
     const track = queue[prevIdx];
     set({ current: track, queueIndex: prevIdx, progress: 0, isPlaying: true });
-    loadTrack(audio, track, { autoplay: true });
-    recordPlay(track.id);
+    loadTrack(track, { autoplay: true, volume });
+    recordPlay(track.id, sourcePlaylistId);
     get().persist();
   },
 
@@ -378,12 +459,30 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (audio && Number.isFinite(seconds)) {
       audio.currentTime = seconds;
       set({ progress: seconds });
+      crossfadeArmed = false;
       get().persist();
     }
   },
 
+  tickCrossfade: (currentTime, duration) => {
+    const { crossfadeSeconds, isPlaying, repeat, queue, queueIndex, shuffle } = get();
+    if (!isPlaying || !duration || crossfadeSeconds <= 0 || repeat === "one") return;
+    if (crossfadeArmed) return;
+    const remaining = duration - currentTime;
+    if (remaining > crossfadeSeconds + 0.15) return;
+    const nextIdx = resolveNextIndex(queue, queueIndex, shuffle, repeat);
+    if (nextIdx == null) return;
+    crossfadeArmed = true;
+    preloadIdle(queue[nextIdx], 0);
+    get().next({ fromCrossfade: true });
+  },
+
   onEnded: () => {
-    const { repeat, audioRef } = get();
+    const { repeat, audioRef, crossfadeSeconds } = get();
+    if (crossfadeArmed && crossfadeSeconds > 0) {
+      crossfadeArmed = false;
+      return;
+    }
     const audio = audioRef || getSharedAudio();
     if (repeat === "one" && audio) {
       audio.currentTime = 0;
@@ -402,6 +501,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (atEnd && get().repeat === "off") {
       set({ isPlaying: false });
       get().persist();
+      return;
+    }
+    const nextIdx = resolveNextIndex(queue, queueIndex, shuffle, get().repeat);
+    if (nextIdx != null && crossfadeSeconds === 0) {
+      preloadIdle(queue[nextIdx], get().volume);
+      get().next({ fromCrossfade: true });
       return;
     }
     get().next();

@@ -114,9 +114,17 @@ export default function ProfileContent() {
     <>
       <WebSocketBridge onRefresh={load} />
       <h2 className="text-2xl font-bold mb-1">Profile</h2>
-      <Link href="/setup-guide" className="text-sm text-muted hover:text-white mb-6 inline-block">
-        Setup guide
-      </Link>
+      <div className="flex flex-wrap gap-3 text-sm text-muted mb-6">
+        <Link href="/setup-guide" className="hover:text-white">
+          Setup guide
+        </Link>
+        <Link href="/stats" className="hover:text-white">
+          Listening stats
+        </Link>
+        <Link href="/history" className="hover:text-white">
+          History
+        </Link>
+      </div>
       {banner && <p className="text-sm text-spotify mb-4">{banner}</p>}
 
       {stats && (

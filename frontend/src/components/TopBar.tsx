@@ -12,7 +12,7 @@ type Me = {
   role: string;
 };
 
-export function TopBar() {
+export function TopBar({ onOpenLibrary }: { onOpenLibrary?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
@@ -58,7 +58,17 @@ export function TopBar() {
   const homeActive = pathname === "/";
 
   return (
-    <header className="shrink-0 h-16 flex items-center gap-3 px-4 bg-black z-30">
+    <header className="shrink-0 h-14 sm:h-16 flex items-center gap-2 sm:gap-3 px-2 sm:px-4 bg-black z-30">
+      {onOpenLibrary && (
+        <button
+          type="button"
+          onClick={onOpenLibrary}
+          className="md:hidden h-10 w-10 shrink-0 rounded-full bg-[#242424] text-white flex items-center justify-center"
+          aria-label="Open library"
+        >
+          <LibraryMiniIcon />
+        </button>
+      )}
       <Link href="/" className="shrink-0 flex items-center" aria-label="Media player home">
         <Image src="/logo.png" alt="Media player" width={36} height={36} className="rounded-full" priority />
       </Link>
@@ -111,6 +121,12 @@ export function TopBar() {
           <div className="absolute right-0 mt-2 w-56 rounded-md bg-[#282828] shadow-2xl py-1 text-sm z-50 border border-white/5">
             <MenuLink href="/profile" onClick={() => setOpen(false)}>
               Account
+            </MenuLink>
+            <MenuLink href="/stats" onClick={() => setOpen(false)}>
+              Listening stats
+            </MenuLink>
+            <MenuLink href="/history" onClick={() => setOpen(false)}>
+              Listening history
             </MenuLink>
             <MenuLink href="/downloads" onClick={() => setOpen(false)}>
               Downloads

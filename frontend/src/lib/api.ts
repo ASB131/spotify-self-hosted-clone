@@ -10,6 +10,7 @@ export type Track = {
   added_via?: string | null;
   art_url?: string | null;
   added_at?: string | null;
+  is_liked?: boolean;
 };
 
 export type Playlist = {
@@ -17,6 +18,7 @@ export type Playlist = {
   name: string;
   description?: string | null;
   is_liked_songs: boolean;
+  is_liked_playlist?: boolean;
   track_count: number;
   cover_url?: string | null;
 };

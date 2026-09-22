@@ -12,12 +12,14 @@ from app.database import get_db
 from app.models.track import Track
 from app.models.user import User
 from app.models.user_track import UserTrack
-from app.schemas.auth import SearchResults, TrackPublic, TrackUpdate, UpgradeQualityRequest
+from app.schemas.auth import SearchResults, TrackBulkUpdate, TrackPublic, TrackUpdate, UpgradeQualityRequest
+from app.services.library import _add_to_playlist
 from app.services.search import search_library
 from app.services.storage_paths import art_file_path, ensure_parent, new_art_relative_path
 from app.services.streaming import stream_track
 from app.services.track_cleanup import remove_user_track_membership
 from app.workers.tasks import upgrade_track_quality
+from app.models.playlist import Playlist, PlaylistTrack
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -28,6 +30,7 @@ def _track_public(
     track: Track,
     added_at: datetime | None = None,
     added_via: str | None = None,
+    is_liked: bool = False,
 ) -> TrackPublic:
     art_url = f"/api/v1/tracks/{track.id}/art" if track.art_relative_path else None
     return TrackPublic(
@@ -42,6 +45,7 @@ def _track_public(
         added_via=added_via,
         art_url=art_url,
         added_at=added_at,
+        is_liked=is_liked,
     )
 
 
@@ -56,12 +60,12 @@ def _user_track(db: Session, user_id: int, track_id: int) -> tuple[Track, UserTr
 @router.get("", response_model=list[TrackPublic])
 def list_tracks(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TrackPublic]:
     rows = db.execute(
-        select(Track, UserTrack.added_at, UserTrack.added_via)
+        select(Track, UserTrack.added_at, UserTrack.added_via, UserTrack.is_liked)
         .join(UserTrack, UserTrack.track_id == Track.id)
         .where(UserTrack.user_id == user.id)
         .order_by(UserTrack.added_at.desc())
     ).all()
-    return [_track_public(track, added_at, added_via) for track, added_at, added_via in rows]
+    return [_track_public(track, added_at, added_via, is_liked) for track, added_at, added_via, is_liked in rows]
 
 
 @router.get("/search", response_model=SearchResults)
@@ -73,14 +77,19 @@ def search(
     tracks, playlists = search_library(db, user.id, q)
     from app.schemas.auth import PlaylistPublic
 
+    liked_map = {
+        ut.track_id: ut.is_liked
+        for ut in db.scalars(select(UserTrack).where(UserTrack.user_id == user.id)).all()
+    }
     return SearchResults(
-        tracks=[_track_public(t) for t in tracks],
+        tracks=[_track_public(t, is_liked=liked_map.get(t.id, False)) for t in tracks],
         playlists=[
             PlaylistPublic(
                 id=p.id,
                 name=p.name,
                 description=p.description,
                 is_liked_songs=p.is_liked_songs,
+                is_liked_playlist=getattr(p, "is_liked_playlist", False),
                 track_count=len(p.tracks),
                 cover_url=f"/api/v1/playlists/{p.id}/cover" if p.cover_relative_path else None,
             )
@@ -89,10 +98,33 @@ def search(
     )
 
 
+@router.patch("/bulk", response_model=dict)
+def bulk_update_tracks(
+    body: TrackBulkUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.title is None and body.artist is None and body.album is None:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updated = 0
+    for tid in body.track_ids:
+        track, _link = _user_track(db, user.id, tid)
+        if body.title is not None:
+            track.title = body.title.strip()
+        if body.artist is not None:
+            track.artist = body.artist.strip()
+        if body.album is not None:
+            track.album = body.album.strip() or None
+        db.add(track)
+        updated += 1
+    db.commit()
+    return {"updated": updated}
+
+
 @router.get("/{track_id}", response_model=TrackPublic)
 def get_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TrackPublic:
     track, link = _user_track(db, user.id, track_id)
-    return _track_public(track, link.added_at, link.added_via)
+    return _track_public(track, link.added_at, link.added_via, link.is_liked)
 
 
 @router.patch("/{track_id}", response_model=TrackPublic)
@@ -107,10 +139,65 @@ def update_track(
         track.title = body.title.strip()
     if body.artist is not None:
         track.artist = body.artist.strip()
+    if body.album is not None:
+        track.album = body.album.strip() or None
     db.add(track)
     db.commit()
     db.refresh(track)
-    return _track_public(track, link.added_at)
+    return _track_public(track, link.added_at, link.added_via, link.is_liked)
+
+
+def _liked_playlist(db: Session, user_id: int) -> Playlist:
+    pl = db.scalar(
+        select(Playlist).where(Playlist.user_id == user_id, Playlist.is_liked_playlist.is_(True))
+    )
+    if pl:
+        return pl
+    pl = Playlist(
+        user_id=user_id,
+        name="Liked Songs",
+        description="Songs you hearted",
+        is_liked_songs=False,
+        is_liked_playlist=True,
+    )
+    db.add(pl)
+    db.flush()
+    return pl
+
+
+@router.post("/{track_id}/like", response_model=TrackPublic)
+def like_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    track, link = _user_track(db, user.id, track_id)
+    link.is_liked = True
+    db.add(link)
+    liked_pl = _liked_playlist(db, user.id)
+    _add_to_playlist(db, liked_pl.id, track.id)
+    db.commit()
+    db.refresh(track)
+    db.refresh(link)
+    return _track_public(track, link.added_at, link.added_via, True)
+
+
+@router.delete("/{track_id}/like", response_model=TrackPublic)
+def unlike_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    track, link = _user_track(db, user.id, track_id)
+    link.is_liked = False
+    db.add(link)
+    liked_pl = db.scalar(
+        select(Playlist).where(Playlist.user_id == user.id, Playlist.is_liked_playlist.is_(True))
+    )
+    if liked_pl:
+        pt = db.scalar(
+            select(PlaylistTrack).where(
+                PlaylistTrack.playlist_id == liked_pl.id, PlaylistTrack.track_id == track_id
+            )
+        )
+        if pt:
+            db.delete(pt)
+    db.commit()
+    db.refresh(track)
+    db.refresh(link)
+    return _track_public(track, link.added_at, link.added_via, False)
 
 
 @router.post("/{track_id}/art", response_model=TrackPublic)
@@ -135,7 +222,7 @@ async def upload_track_art(
     db.add(track)
     db.commit()
     db.refresh(track)
-    return _track_public(track, link.added_at)
+    return _track_public(track, link.added_at, link.added_via, link.is_liked)
 
 
 @router.get("/{track_id}/stream")

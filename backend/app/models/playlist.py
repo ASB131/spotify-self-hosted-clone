@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,7 +23,8 @@ class Playlist(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    is_liked_songs: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_liked_songs: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_liked_playlist: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     cover_relative_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

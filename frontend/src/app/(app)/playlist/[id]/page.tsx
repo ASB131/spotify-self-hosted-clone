@@ -50,7 +50,7 @@ export default function PlaylistPage() {
   );
 
   async function removePlaylist() {
-    if (!playlist || playlist.is_liked_songs) return;
+    if (!playlist || playlist.is_liked_songs || playlist.is_liked_playlist) return;
     if (!window.confirm(`Delete playlist “${playlist.name}”? Songs stay in your library.`)) return;
     try {
       await api(`/api/v1/playlists/${id}`, { method: "DELETE" });
@@ -68,12 +68,12 @@ export default function PlaylistPage() {
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {playlist && (
         <CollectionHero
-          kind={playlist.is_liked_songs ? "Playlist" : "Public Playlist"}
+          kind={playlist.is_liked_songs || playlist.is_liked_playlist ? "Playlist" : "Public Playlist"}
           title={playlist.name}
-          liked={playlist.is_liked_songs}
+          liked={!!(playlist.is_liked_songs || playlist.is_liked_playlist)}
           coverUrl={playlist.cover_url}
           artUrls={arts}
-          onEditDetails={playlist.is_liked_songs ? undefined : () => setEditing(true)}
+          onEditDetails={playlist.is_liked_songs || playlist.is_liked_playlist ? undefined : () => setEditing(true)}
           subtitle={
             <>
               <span className="inline-flex h-6 w-6 rounded-full bg-[#535353] items-center justify-center text-xs font-bold">
@@ -95,15 +95,15 @@ export default function PlaylistPage() {
                 const j = Math.floor(Math.random() * (i + 1));
                 [copy[i], copy[j]] = [copy[j], copy[i]];
               }
-              setQueue(copy, 0);
+              setQueue(copy, 0, id);
             } else {
-              setQueue(tracks, 0);
+              setQueue(tracks, 0, id);
             }
           }}
           shuffleActive={shuffle}
           onShuffle={toggleShuffle}
           actions={
-            !playlist.is_liked_songs ? (
+            !playlist.is_liked_songs && !playlist.is_liked_playlist ? (
               <div className="relative">
                 <button
                   type="button"
@@ -146,6 +146,7 @@ export default function PlaylistPage() {
         tracks={tracks}
         playlistId={playlist?.id}
         isLikedSongs={playlist?.is_liked_songs}
+        isLikedPlaylist={playlist?.is_liked_playlist}
         onChanged={load}
         emptyMessage="This playlist is empty. Save tracks to it from the extension."
       />

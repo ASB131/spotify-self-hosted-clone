@@ -107,7 +107,12 @@ export default function HomePage() {
           )}
 
           <section>
-            <h2 className="text-xl font-bold mb-3">Recently played</h2>
+            <div className="flex items-end justify-between mb-3">
+              <h2 className="text-xl font-bold">Recently played</h2>
+              <Link href="/history" className="text-sm text-muted hover:text-white">
+                Full history
+              </Link>
+            </div>
             {data.recently_played_tracks.length === 0 && data.recently_played_playlists.length === 0 ? (
               <p className="text-sm text-muted">Play something. It will show up here.</p>
             ) : (

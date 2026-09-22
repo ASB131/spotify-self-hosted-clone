@@ -106,3 +106,73 @@ def create_invite(
 @router.get("/invite-codes", response_model=list[InviteCodePublic])
 def list_invites(_admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     return db.scalars(select(InviteCode).order_by(InviteCode.created_at.desc())).all()
+
+
+@router.get("/health")
+def admin_health(_admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Deep health for admin UI: DB, Redis, disk, yt-dlp, cookies."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    import redis
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    checks: dict = {}
+
+    # Database
+    try:
+        db.execute(select(func.count()).select_from(User))
+        checks["database"] = {"ok": True, "detail": "reachable"}
+    except Exception as e:
+        checks["database"] = {"ok": False, "detail": str(e)[:200]}
+
+    # Redis
+    try:
+        r = redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        r.ping()
+        checks["redis"] = {"ok": True, "detail": "ping ok"}
+    except Exception as e:
+        checks["redis"] = {"ok": False, "detail": str(e)[:200]}
+
+    # Celery broker
+    try:
+        r = redis.from_url(settings.celery_broker_url, socket_connect_timeout=2)
+        r.ping()
+        checks["celery_broker"] = {"ok": True, "detail": "ping ok"}
+    except Exception as e:
+        checks["celery_broker"] = {"ok": False, "detail": str(e)[:200]}
+
+    # Music disk
+    try:
+        root = Path(settings.music_root)
+        usage = shutil.disk_usage(str(root if root.exists() else "/"))
+        free_gb = usage.free / (1024**3)
+        checks["music_disk"] = {
+            "ok": free_gb > 1,
+            "detail": f"{free_gb:.1f} GB free / {usage.total / (1024**3):.1f} GB total",
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+        }
+    except Exception as e:
+        checks["music_disk"] = {"ok": False, "detail": str(e)[:200]}
+
+    # yt-dlp
+    try:
+        out = subprocess.check_output(["yt-dlp", "--version"], text=True, timeout=8).strip()
+        checks["yt_dlp"] = {"ok": True, "detail": out}
+    except Exception as e:
+        checks["yt_dlp"] = {"ok": False, "detail": str(e)[:200]}
+
+    # cookies
+    cookies = Path(settings.ytdlp_cookies_path)
+    checks["cookies"] = {
+        "ok": cookies.is_file() and cookies.stat().st_size > 0,
+        "detail": "configured" if cookies.is_file() else "missing",
+        "path": str(cookies),
+    }
+
+    overall = all(c.get("ok") for c in checks.values() if isinstance(c, dict) and "ok" in c)
+    return {"ok": overall, "checks": checks}
