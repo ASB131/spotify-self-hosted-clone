@@ -2,32 +2,45 @@
 
 Spotify-style web UI, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks to your library. All storage paths and host ports are configurable via `.env`.
 
-## Quick start
+## Quick start (server — pull images only)
 
-1. Copy `.env.example` to `.env` and set at least `SECRET_KEY` (32+ chars) and `POSTGRES_PASSWORD`.
-2. Optionally set volume paths (`POSTGRES_DATA`, `REDIS_DATA`, `MUSIC_VOLUME`, `APP_DATA`) to different drives.
-3. For YouTube reliability, export cookies to `cookies.txt` (see `cookies.txt.example`).
-4. Run:
+No git clone and no local build. Compose pulls from GitHub Container Registry.
 
 ```bash
-docker compose up -d --build
-```
+mkdir -p /ssd1_system/docker/spotify_clone
+cd /ssd1_system/docker/spotify_clone
 
-5. Open `http://localhost:3000` (or your `WEB_PORT`) and complete **Admin setup**.
-6. Create invite codes in **Admin** for additional users.
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/ASB131/spotify-self-hosted-clone/main/deploy/docker-compose.yml
+curl -fsSL -o .env.example \
+  https://raw.githubusercontent.com/ASB131/spotify-self-hosted-clone/main/deploy/.env.example
 
-### Admin setup vs login
+cp .env.example .env
+# Edit .env: SECRET_KEY, POSTGRES_PASSWORD, YOUR_SERVER_IP, volume paths
 
-- **First visit:** If no user exists in the database, you are sent to **`/setup`** to create the admin account.
-- **Already configured:** If you ran setup before (Postgres data still on disk), you will see **Login** instead. Use the admin email/password you created earlier.
-- **Run setup again:** Stop the stack and remove the database volume, then start fresh:
+mkdir -p /ssd2_cache/databases/spotify_clone_postgres \
+         /ssd2_cache/caches/spotify_clone/{redis,app,lidarr} \
+         /ssd2_cache/spotify_clone_media
+touch cookies.txt
 
-```bash
-docker compose down
-# Remove Postgres data (Windows example path from .env)
-rm -rf ./data/postgres
+docker compose pull
 docker compose up -d
+# optional Lidarr (still uses your existing qBittorrent):
+# docker compose --profile arr up -d
 ```
+
+Open `http://YOUR_SERVER_IP:3000` → create admin → **Setup guide**.
+
+If `docker compose pull` fails with unauthorized, make the GHCR packages **Public** (GitHub → Packages → each image → Package settings), or `docker login ghcr.io` with a PAT that can `read:packages`.
+
+### Volume layout (example)
+
+| Purpose | Host path |
+|---------|-----------|
+| Compose + `.env` | `/ssd1_system/docker/spotify_clone` |
+| Postgres | `/ssd2_cache/databases/spotify_clone_postgres` |
+| Redis + app + Lidarr config | `/ssd2_cache/caches/spotify_clone/...` |
+| Audio files | `/ssd2_cache/spotify_clone_media` |
 
 ## Do I need Lidarr / qBittorrent?
 
@@ -108,7 +121,10 @@ GitHub Actions publishes:
 - `ghcr.io/asb131/spotify-self-hosted-clone-api:main`
 - `ghcr.io/asb131/spotify-self-hosted-clone-web:main`
 
-`docker-compose.yml` uses these by default (`IMAGE_TAG`, `API_IMAGE`, `WEB_IMAGE` in `.env`). Run:
+Server deploy files (no source, no build):
+
+- [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
+- [`deploy/.env.example`](deploy/.env.example)
 
 ```bash
 docker compose pull
@@ -117,7 +133,7 @@ docker compose up -d
 
 After the first successful CI run, open **GitHub → Packages** for each image and set visibility to **Public** so hosts can pull without logging in.
 
-To build locally instead of pulling, clear the image variables in `.env` (`API_IMAGE=` and `WEB_IMAGE=`) and run `docker compose up -d --build`.
+Dev/build from a full clone: use the root `docker-compose.yml` (includes `build:`) and `docker compose up -d --build`.
 
 If CI fails with `write_package`, ensure **Settings → Actions → General → Workflow permissions** is **Read and write permissions**.
 

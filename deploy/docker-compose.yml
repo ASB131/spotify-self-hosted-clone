@@ -1,0 +1,131 @@
+# Pull-only deploy — no source tree, no local build.
+# Images: ghcr.io/asb131/spotify-self-hosted-clone-{api,web}:main
+#
+# Quick start on a server:
+#   mkdir -p /ssd1_system/docker/spotify_clone && cd /ssd1_system/docker/spotify_clone
+#   curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/ASB131/spotify-self-hosted-clone/main/deploy/docker-compose.yml
+#   curl -fsSL -o .env.example https://raw.githubusercontent.com/ASB131/spotify-self-hosted-clone/main/deploy/.env.example
+#   cp .env.example .env   # edit paths / secrets
+#   touch cookies.txt
+#   docker compose pull && docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-musicapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-musicapp}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicapp} -d ${POSTGRES_DB:-musicapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ${REDIS_DATA}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-musicapp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-musicapp}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      MUSIC_ROOT: /music
+      APP_DATA: /app/data
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ${MUSIC_VOLUME}:/music
+      - ${APP_DATA}:/app/data
+      - ${COOKIES_FILE:-./cookies.txt}:/app/cookies.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-musicapp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-musicapp}
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      REDIS_URL: redis://redis:6379/0
+      MUSIC_ROOT: /music
+      YTDLP_COOKIES_PATH: /app/cookies.txt
+    volumes:
+      - ${MUSIC_VOLUME}:/music
+      - ${APP_DATA}:/app/data
+      - ${COOKIES_FILE:-./cookies.txt}:/app/cookies.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+
+  beat:
+    image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-musicapp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-musicapp}
+      CELERY_BROKER_URL: redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app beat --loglevel=info
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-web:${IMAGE_TAG:-main}}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      INTERNAL_API_URL: http://api:8000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+  # Optional Lidarr only — use your existing qBittorrent (not packaged here).
+  # docker compose --profile arr up -d
+  lidarr:
+    profiles: ["arr"]
+    image: lscr.io/linuxserver/lidarr:latest
+    restart: unless-stopped
+    ports:
+      - "${LIDARR_PORT:-8686}:8686"
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${LIDARR_CONFIG}:/config
+      - ${MUSIC_VOLUME}:/music
+      - ${TORRENTS_VOLUME:-./downloads}:/downloads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
