@@ -46,6 +46,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       MUSIC_ROOT: /music
       APP_DATA: /app/data
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

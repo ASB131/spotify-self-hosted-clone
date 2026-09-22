@@ -6,21 +6,25 @@
     <style>
       body {
         font-family: system-ui, sans-serif;
-        max-width: 480px;
+        max-width: 520px;
         margin: 40px auto;
         padding: 0 16px;
+        line-height: 1.5;
       }
       label {
         display: block;
         margin-top: 16px;
+        font-size: 14px;
       }
       input {
         width: 100%;
         padding: 8px;
         margin-top: 4px;
+        box-sizing: border-box;
       }
       button {
-        margin-top: 24px;
+        margin-top: 12px;
+        margin-right: 8px;
         padding: 10px 20px;
         background: #1db954;
         border: none;
@@ -28,11 +32,27 @@
         font-weight: 600;
         cursor: pointer;
       }
+      .secondary {
+        background: #333;
+        color: #fff;
+      }
+      .hint {
+        font-size: 13px;
+        color: #b3b3b3;
+      }
     </style>
   </head>
   <body>
     <h1>Resonance extension</h1>
-    <p>Log in on your web app, copy the access token from browser devtools (sessionStorage), or use the token returned by login API.</p>
+    <p class="hint">
+      Log in on the web app, open <strong>Extension connect</strong> (Setup guide → Extension connect), and copy the API
+      URL and token here.
+    </p>
+    <label
+      >Web app URL (for &quot;Get token&quot; link)
+      <input id="webBase" placeholder="http://localhost:3000" />
+    </label>
+    <button type="button" id="openConnect" class="secondary">Open Extension connect in browser</button>
     <label
       >API base URL
       <input id="apiBase" placeholder="http://localhost:8000" />
@@ -41,7 +61,7 @@
       >JWT access token
       <input id="accessToken" type="password" />
     </label>
-    <button id="save">Save</button>
+    <button id="save">Save settings</button>
     <p id="msg"></p>
     <script src="options.js"></script>
   </body>

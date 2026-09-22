@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
     spotify_redirect_uri: str = "http://localhost:8000/api/v1/spotify/callback"
+    public_web_url: str = "http://localhost:3000"
 
     default_storage_quota_bytes: int = 10 * 1024 * 1024 * 1024
     extension_dir: str = "/app/extension"

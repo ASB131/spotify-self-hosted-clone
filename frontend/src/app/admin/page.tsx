@@ -72,6 +72,17 @@ export default function AdminPage() {
           ))}
         </ul>
       </section>
+      <section className="mb-8">
+        <h3 className="font-semibold mb-2">Server configuration</h3>
+        <p className="text-sm text-muted mb-2">
+          Spotify keys, YouTube cookies, and CORS are configured in the host <code className="text-white">.env</code>.
+          See the in-app{" "}
+          <a href="/setup-guide" className="text-spotify underline">
+            Setup guide
+          </a>{" "}
+          for status badges and steps.
+        </p>
+      </section>
       <section>
         <h3 className="font-semibold mb-2">Storage by user</h3>
         <div className="overflow-x-auto">

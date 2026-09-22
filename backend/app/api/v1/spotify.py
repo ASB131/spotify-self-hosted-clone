@@ -60,4 +60,4 @@ def spotify_callback(code: str = Query(...), state: str = Query(...), db: Sessio
     user.spotify_refresh_token = data.get("refresh_token") or user.spotify_refresh_token
     user.spotify_token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 3600))
     db.commit()
-    return RedirectResponse(url="/profile?spotify=connected")
+    return RedirectResponse(url=f"{settings.public_web_url}/profile?spotify=connected")

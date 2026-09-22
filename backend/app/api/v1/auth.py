@@ -175,3 +175,9 @@ def my_stats(user: User = Depends(get_current_user), db: Session = Depends(get_d
         storage_used_bytes=user.storage_used_bytes,
         storage_quota_bytes=user.storage_quota_bytes,
     )
+
+
+@router.get("/extension-token", response_model=TokenResponse)
+def extension_token(user: User = Depends(get_current_user)) -> TokenResponse:
+    """Issue a fresh JWT for the Chrome extension (paste into extension options)."""
+    return TokenResponse(access_token=create_access_token(user.id))
