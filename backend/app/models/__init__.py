@@ -1,6 +1,14 @@
 """ORM models — import all for Alembic autogenerate."""
 
 from app.models.download_job import DownloadJob, JobStatus
+from app.models.discovery import (
+    ArtistMbid,
+    DiscoveryItem,
+    DiscoveryItemStatus,
+    DiscoveryKind,
+    DiscoveryPlaylist,
+    PlayEvent,
+)
 from app.models.invite_code import InviteCode
 from app.models.playlist import Playlist, PlaylistTrack
 from app.models.server_config import ServerConfig
@@ -21,4 +29,10 @@ __all__ = [
     "ServerConfig",
     "DownloadJob",
     "JobStatus",
+    "ArtistMbid",
+    "PlayEvent",
+    "DiscoveryPlaylist",
+    "DiscoveryItem",
+    "DiscoveryKind",
+    "DiscoveryItemStatus",
 ]

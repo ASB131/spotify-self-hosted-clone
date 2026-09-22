@@ -38,6 +38,9 @@ class DownloadJob(Base):
     stage: Mapped[str] = mapped_column(String(128), default="Queued", nullable=False)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     track_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"), nullable=True)
+    discovery_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("discovery_items.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -84,6 +84,12 @@ def search(
     )
 
 
+@router.get("/{track_id}", response_model=TrackPublic)
+def get_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TrackPublic:
+    track, link = _user_track(db, user.id, track_id)
+    return _track_public(track, link.added_at)
+
+
 @router.patch("/{track_id}", response_model=TrackPublic)
 def update_track(
     track_id: int,

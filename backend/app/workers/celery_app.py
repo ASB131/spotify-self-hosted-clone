@@ -29,4 +29,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.sync_all_spotify_libraries",
         "schedule": crontab(minute=15),
     },
+    "discovery-weekly-monday": {
+        "task": "app.workers.tasks.refresh_all_discovery",
+        "schedule": crontab(hour=3, minute=0, day_of_week=1),
+    },
 }

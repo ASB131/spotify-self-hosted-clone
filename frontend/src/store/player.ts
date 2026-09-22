@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Track } from "@/lib/api";
 import { streamUrl } from "@/lib/api";
 import { getSharedAudio } from "@/lib/playerAudio";
+import { recordPlay } from "@/lib/plays";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -182,6 +183,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const track = tracks[idx];
     set({ queue: tracks, queueIndex: idx, current: track, progress: 0, isPlaying: true });
     loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    recordPlay(track.id);
     get().persist();
   },
 
@@ -257,6 +259,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const track = queue[index];
     set({ current: track, queueIndex: index, progress: 0, isPlaying: true });
     loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    recordPlay(track.id);
     get().persist();
   },
 
@@ -285,6 +288,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set({ current: track, queue: [track], queueIndex: 0, progress: 0, isPlaying: true });
     }
     loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    recordPlay(track.id);
     get().persist();
   },
 
@@ -325,6 +329,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const track = queue[nextIdx];
     set({ current: track, queueIndex: nextIdx, progress: 0, isPlaying: true });
     loadTrack(get().audioRef || getSharedAudio(), track, { autoplay: true });
+    recordPlay(track.id);
     get().persist();
   },
 
@@ -342,6 +347,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const track = queue[prevIdx];
     set({ current: track, queueIndex: prevIdx, progress: 0, isPlaying: true });
     loadTrack(audio, track, { autoplay: true });
+    recordPlay(track.id);
     get().persist();
   },
 

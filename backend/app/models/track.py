@@ -23,6 +23,8 @@ class TrackSource(str, enum.Enum):
     YOUTUBE = "youtube"
     SPOTIFY = "spotify"
     UPLOAD = "upload"
+    LIDARR = "lidarr"
+    DISCOVERY = "discovery"
 
 
 class Track(Base):

@@ -7,12 +7,15 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.models.discovery import DiscoveryItem, DiscoveryItemStatus
 from app.models.download_job import DownloadJob, JobStatus
 from app.models.track import AudioFormat, Track, TrackSource
 from app.models.user import User
 from app.services.events import publish_user_event
+from app.services.integrations import lidarr_settings
 from app.services.job_progress import update_job
 from app.services.library import get_or_link_track
+from app.services.lidarr_client import LidarrClient
 from app.workers.celery_app import celery_app
 from app.workers.download_util import download_youtube_audio, extract_youtube_id, persist_download
 from app.workers.spotify_auth import ensure_spotify_access_token
@@ -22,6 +25,30 @@ logger = logging.getLogger(__name__)
 
 def _notify(user_id: int, event: str, data: dict) -> None:
     publish_user_event(user_id, event, data)
+
+
+def _link_discovery_item(db, discovery_item_id: int | None, track_id: int, via: str = "youtube") -> None:
+    if not discovery_item_id:
+        return
+    item = db.get(DiscoveryItem, discovery_item_id)
+    if not item:
+        return
+    item.track_id = track_id
+    item.status = DiscoveryItemStatus.READY
+    item.acquire_via = via
+    item.error = None
+    db.add(item)
+
+
+def _fail_discovery_item(db, discovery_item_id: int | None, error: str) -> None:
+    if not discovery_item_id:
+        return
+    item = db.get(DiscoveryItem, discovery_item_id)
+    if not item:
+        return
+    item.status = DiscoveryItemStatus.FAILED
+    item.error = error[:1000]
+    db.add(item)
 
 
 @celery_app.task(name="app.workers.tasks.download_youtube_track", bind=True, max_retries=3)
@@ -35,6 +62,7 @@ def download_youtube_track(
     playlist_id: int | None,
     add_to_liked: bool,
     job_id: int | None = None,
+    discovery_item_id: int | None = None,
 ):
     db = SessionLocal()
     tmp_dir = None
@@ -61,15 +89,18 @@ def download_youtube_track(
                 job.celery_task_id = self.request.id
                 db.add(job)
                 db.commit()
+            if job and discovery_item_id is None:
+                discovery_item_id = job.discovery_item_id
 
         update_job(db, job_id, status=JobStatus.RUNNING, progress=5, stage="Checking library…")
 
+        # ytsearch URLs: resolve via yt-dlp (extract_youtube_id may fail — allow ytsearch)
         video_id = extract_youtube_id(url)
-        if not video_id:
+        if not video_id and not url.startswith("ytsearch"):
             raise ValueError("Invalid YouTube URL")
 
-        source_key = f"youtube:{video_id}"
-        existing = db.scalar(select(Track).where(Track.source_key == source_key))
+        source_key = f"youtube:{video_id}" if video_id else None
+        existing = db.scalar(select(Track).where(Track.source_key == source_key)) if source_key else None
         if existing:
             update_job(db, job_id, progress=80, stage="Already on server — linking to your library…")
             get_or_link_track(
@@ -79,6 +110,7 @@ def download_youtube_track(
                 playlist_id=playlist_id,
                 add_to_liked=add_to_liked,
             )
+            _link_discovery_item(db, discovery_item_id, existing.id, via="youtube")
             db.commit()
             update_job(
                 db,
@@ -141,6 +173,7 @@ def download_youtube_track(
         db.flush()
         update_job(db, job_id, progress=90, stage="Adding to your library…")
         get_or_link_track(db, user_id, track, playlist_id=playlist_id, add_to_liked=add_to_liked)
+        _link_discovery_item(db, discovery_item_id, track.id, via="youtube")
         db.commit()
         update_job(
             db,
@@ -167,6 +200,8 @@ def download_youtube_track(
                     stage="Failed — will retry if attempts remain",
                     error=str(exc),
                 )
+                _fail_discovery_item(db, discovery_item_id, str(exc))
+                db.commit()
             except Exception:
                 pass
         _notify(user_id, "download_failed", {"error": str(exc), "url": url, "job_id": job_id})
@@ -175,6 +210,109 @@ def download_youtube_track(
         db.close()
         if tmp_dir and tmp_dir.exists():
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@celery_app.task(name="app.workers.tasks.acquire_discovery_item", bind=True, max_retries=1)
+def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool = True):
+    """Try Lidarr grab; fall back to YouTube ytsearch."""
+    db = SessionLocal()
+    try:
+        item = db.get(DiscoveryItem, item_id)
+        if not item:
+            return {"status": "missing"}
+        if item.status == DiscoveryItemStatus.READY and item.track_id:
+            return {"status": "ready", "track_id": item.track_id}
+
+        lidarr_ok = False
+        if prefer_lidarr:
+            lid = lidarr_settings(db)
+            client = LidarrClient(lid)
+            if client.health():
+                item.acquire_via = "lidarr"
+                item.status = DiscoveryItemStatus.DOWNLOADING
+                db.add(item)
+                db.commit()
+                album = client.ensure_album(
+                    release_mbid=item.release_mbid,
+                    artist_name=item.artist,
+                    album_name=item.album or item.title,
+                )
+                if album:
+                    lidarr_ok = True
+                    # Lidarr grabs are async in the download client; fall through to YouTube
+                    # for immediate library playback while Lidarr works in parallel.
+                    _notify(
+                        user_id,
+                        "download_progress",
+                        {
+                            "stage": "Queued in Lidarr — also fetching via YouTube for playback",
+                            "discovery_item_id": item_id,
+                        },
+                    )
+
+        # Always ensure Resonance has a playable file via YouTube (Lidarr import can replace later)
+        url = f"ytsearch1:{item.artist} - {item.title}"
+        item.acquire_via = "lidarr+youtube" if lidarr_ok else "youtube"
+        db.add(item)
+        db.commit()
+        job = DownloadJob(
+            user_id=user_id,
+            url=url,
+            title=item.title,
+            artist=item.artist,
+            audio_format="flac",
+            status=JobStatus.QUEUED,
+            progress=0,
+            stage="Queued — YouTube" + (" (Lidarr also searching)" if lidarr_ok else ""),
+            discovery_item_id=item.id,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        task = download_youtube_track.delay(
+            user_id=user_id,
+            url=url,
+            title=item.title,
+            artist=item.artist,
+            audio_format="flac",
+            playlist_id=None,
+            add_to_liked=True,
+            job_id=job.id,
+            discovery_item_id=item.id,
+        )
+        job.celery_task_id = task.id
+        db.add(job)
+        db.commit()
+        return {"status": "queued", "job_id": job.id, "lidarr": lidarr_ok}
+    except Exception as exc:
+        logger.exception("acquire_discovery_item failed")
+        try:
+            _fail_discovery_item(db, item_id, str(exc))
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.refresh_user_discovery_task")
+def refresh_user_discovery_task(user_id: int):
+    from app.services.discovery_builder import refresh_user_discovery
+
+    db = SessionLocal()
+    try:
+        return refresh_user_discovery(db, user_id)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.refresh_all_discovery")
+def refresh_all_discovery():
+    from app.services.discovery_builder import refresh_all_users_discovery
+
+    refresh_all_users_discovery()
+    return {"ok": True}
 
 
 @celery_app.task(name="app.workers.tasks.upgrade_track_quality")
