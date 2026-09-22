@@ -27,6 +27,10 @@ class ArtistPage(BaseModel):
     art_urls: list[str]
 
 
+def _cover(p) -> str | None:
+    return f"/api/v1/playlists/{p.id}/cover" if getattr(p, "cover_relative_path", None) else None
+
+
 def _track_public(track: Track, added_at=None) -> TrackPublic:
     return TrackPublic(
         id=track.id,
@@ -78,6 +82,7 @@ def get_artist(
             description=p.description,
             is_liked_songs=p.is_liked_songs,
             track_count=len(p.tracks),
+            cover_url=_cover(p),
         )
         for p in playlists
         if any(pt.track_id in track_ids for pt in p.tracks)

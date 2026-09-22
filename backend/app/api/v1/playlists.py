@@ -1,6 +1,7 @@
-"""Playlists CRUD and track membership."""
+"""Playlists CRUD, cover art, and track membership."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -9,9 +10,16 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.playlist import Playlist, PlaylistTrack
 from app.models.user import User
-from app.schemas.auth import PlaylistPublic, TrackPublic
+from app.schemas.auth import PlaylistPublic, PlaylistUpdate, TrackPublic
+from app.services.storage_paths import (
+    art_file_path,
+    ensure_parent,
+    playlist_cover_relative_path,
+)
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
+
+ALLOWED_IMAGE = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
 
 class PlaylistCreate(BaseModel):
@@ -26,6 +34,7 @@ def _playlist_public(p: Playlist) -> PlaylistPublic:
         description=p.description,
         is_liked_songs=p.is_liked_songs,
         track_count=len(p.tracks),
+        cover_url=f"/api/v1/playlists/{p.id}/cover" if p.cover_relative_path else None,
     )
 
 
@@ -42,6 +51,17 @@ def _track_public_from_pt(pt: PlaylistTrack) -> TrackPublic:
         art_url=f"/api/v1/tracks/{t.id}/art" if t.art_relative_path else None,
         added_at=pt.added_at,
     )
+
+
+def _owned_playlist(db: Session, user: User, playlist_id: int) -> Playlist:
+    pl = db.scalar(
+        select(Playlist)
+        .where(Playlist.id == playlist_id, Playlist.user_id == user.id)
+        .options(selectinload(Playlist.tracks))
+    )
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return pl
 
 
 @router.get("", response_model=list[PlaylistPublic])
@@ -62,20 +82,85 @@ def create_playlist(body: PlaylistCreate, user: User = Depends(get_current_user)
     db.commit()
     db.refresh(pl)
     return PlaylistPublic(
-        id=pl.id, name=pl.name, description=pl.description, is_liked_songs=False, track_count=0
+        id=pl.id,
+        name=pl.name,
+        description=pl.description,
+        is_liked_songs=False,
+        track_count=0,
+        cover_url=None,
     )
 
 
 @router.get("/{playlist_id}", response_model=PlaylistPublic)
 def get_playlist(playlist_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    pl = db.scalar(
-        select(Playlist)
-        .where(Playlist.id == playlist_id, Playlist.user_id == user.id)
-        .options(selectinload(Playlist.tracks))
-    )
-    if not pl:
-        raise HTTPException(status_code=404, detail="Playlist not found")
+    return _playlist_public(_owned_playlist(db, user, playlist_id))
+
+
+@router.patch("/{playlist_id}", response_model=PlaylistPublic)
+def update_playlist(
+    playlist_id: int,
+    body: PlaylistUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    pl = _owned_playlist(db, user, playlist_id)
+    if pl.is_liked_songs and body.name is not None:
+        raise HTTPException(status_code=400, detail="Cannot rename Liked Songs")
+    if body.name is not None:
+        pl.name = body.name.strip()
+    if body.description is not None:
+        pl.description = body.description
+    db.add(pl)
+    db.commit()
+    db.refresh(pl)
+    pl = _owned_playlist(db, user, playlist_id)
     return _playlist_public(pl)
+
+
+@router.post("/{playlist_id}/cover", response_model=PlaylistPublic)
+async def upload_playlist_cover(
+    playlist_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    pl = _owned_playlist(db, user, playlist_id)
+    if pl.is_liked_songs:
+        raise HTTPException(status_code=400, detail="Cannot change Liked Songs cover")
+    ctype = (file.content_type or "").lower()
+    if ctype not in ALLOWED_IMAGE:
+        raise HTTPException(status_code=400, detail="Cover must be JPEG, PNG, or WebP")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Cover too large (max 8MB)")
+    rel = playlist_cover_relative_path(user.id, pl.id)
+    path = art_file_path(rel)
+    ensure_parent(path)
+    path.write_bytes(data)
+    pl.cover_relative_path = rel
+    db.add(pl)
+    db.commit()
+    pl = _owned_playlist(db, user, playlist_id)
+    return _playlist_public(pl)
+
+
+@router.get("/{playlist_id}/cover")
+def playlist_cover(playlist_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    pl = _owned_playlist(db, user, playlist_id)
+    if not pl.cover_relative_path:
+        raise HTTPException(status_code=404, detail="No cover")
+    try:
+        path = art_file_path(pl.cover_relative_path)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Cover missing")
+    media = "image/jpeg"
+    if path.suffix.lower() == ".png":
+        media = "image/png"
+    elif path.suffix.lower() == ".webp":
+        media = "image/webp"
+    return FileResponse(path, media_type=media)
 
 
 @router.get("/{playlist_id}/tracks", response_model=list[TrackPublic])
@@ -98,6 +183,13 @@ def delete_playlist(playlist_id: int, user: User = Depends(get_current_user), db
         raise HTTPException(status_code=404, detail="Playlist not found")
     if pl.is_liked_songs:
         raise HTTPException(status_code=400, detail="Cannot delete Liked Songs")
+    if pl.cover_relative_path:
+        try:
+            path = art_file_path(pl.cover_relative_path)
+            if path.is_file():
+                path.unlink()
+        except (ValueError, OSError):
+            pass
     db.delete(pl)
     db.commit()
     return {"deleted": True}

@@ -16,6 +16,7 @@ export type Playlist = {
   description?: string | null;
   is_liked_songs: boolean;
   track_count: number;
+  cover_url?: string | null;
 };
 
 export function getApiUrl(): string {

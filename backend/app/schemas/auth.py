@@ -75,8 +75,19 @@ class PlaylistPublic(BaseModel):
     description: Optional[str]
     is_liked_songs: bool
     track_count: int = 0
+    cover_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class TrackUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    artist: Optional[str] = Field(default=None, min_length=1, max_length=512)
+
+
+class PlaylistUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    description: Optional[str] = None
 
 
 class DownloadRequest(BaseModel):

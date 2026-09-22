@@ -9,12 +9,15 @@ type Props = {
   subtitle?: ReactNode;
   /** Absolute or /api/... art URLs (up to 4 for collage) */
   artUrls?: (string | null | undefined)[];
+  coverUrl?: string | null;
   gradient?: string;
   liked?: boolean;
   onPlay?: () => void;
   shuffleActive?: boolean;
   onShuffle?: () => void;
   actions?: ReactNode;
+  /** Click title / cover to edit */
+  onEditDetails?: () => void;
 };
 
 function resolveArt(url: string) {
@@ -27,56 +30,92 @@ export function CollectionHero({
   title,
   subtitle,
   artUrls = [],
+  coverUrl,
   gradient,
   liked,
   onPlay,
   shuffleActive,
   onShuffle,
   actions,
+  onEditDetails,
 }: Props) {
   const arts = artUrls.filter(Boolean).map((u) => resolveArt(u as string)).slice(0, 4);
+  const customCover = coverUrl ? resolveArt(coverUrl) : null;
   const bg =
     gradient ||
     (liked
-      ? "linear-gradient(135deg, #450af5 0%, #8e8ee5 50%, #121212 100%)"
+      ? "linear-gradient(180deg, #5038a0 0%, #2a1a5e 45%, #121212 100%)"
       : kind === "Artist"
-        ? "linear-gradient(135deg, #535353 0%, #1a1a1a 60%, #121212 100%)"
-        : "linear-gradient(135deg, #3e5c3a 0%, #1a1a1a 55%, #121212 100%)");
+        ? "linear-gradient(180deg, #535353 0%, #282828 40%, #121212 100%)"
+        : "linear-gradient(180deg, #4a3728 0%, #2a1f18 40%, #121212 100%)");
+
+  const Cover = (
+    <div
+      className={`w-48 h-48 sm:w-56 sm:h-56 shrink-0 shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden bg-black/40 ${
+        liked || kind === "Artist" ? "rounded-full sm:rounded" : "rounded"
+      } ${liked ? "!rounded" : ""} ${onEditDetails && !liked ? "cursor-pointer hover:brightness-110" : ""}`}
+      onClick={liked ? undefined : onEditDetails}
+      onKeyDown={
+        onEditDetails && !liked
+          ? (e) => {
+              if (e.key === "Enter") onEditDetails();
+            }
+          : undefined
+      }
+      role={onEditDetails && !liked ? "button" : undefined}
+      tabIndex={onEditDetails && !liked ? 0 : undefined}
+    >
+      {liked ? (
+        <div className="w-full h-full bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center text-white text-7xl">
+          ♥
+        </div>
+      ) : customCover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={customCover} alt="" className="w-full h-full object-cover" />
+      ) : arts.length >= 4 ? (
+        <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
+          {arts.map((src) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={src} src={src} alt="" className="w-full h-full object-cover" />
+          ))}
+        </div>
+      ) : arts[0] ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={arts[0]} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-5xl font-black text-muted bg-gradient-to-br from-[#333] to-[#111]">
+          {title.charAt(0).toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <section className="relative -mx-6 mb-6 overflow-hidden">
-      <div className="px-6 pt-6 pb-6" style={{ background: bg }}>
+    <section className="relative -mx-6 mb-2 overflow-hidden">
+      <div className="px-6 pt-4 pb-8" style={{ background: bg }}>
         <div className="flex flex-col sm:flex-row items-end gap-6">
-          <div className="w-48 h-48 sm:w-56 sm:h-56 shrink-0 rounded shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden bg-black/40">
-            {liked ? (
-              <div className="w-full h-full bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center text-white text-7xl">
-                ♥
-              </div>
-            ) : arts.length >= 4 ? (
-              <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
-                {arts.map((src) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={src} src={src} alt="" className="w-full h-full object-cover" />
-                ))}
-              </div>
-            ) : arts[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={arts[0]} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-5xl font-black text-muted bg-gradient-to-br from-[#333] to-[#111]">
-                {title.charAt(0).toUpperCase()}
-              </div>
-            )}
-          </div>
+          {Cover}
           <div className="min-w-0 pb-1 flex-1">
-            <p className="text-sm font-medium mb-2">{kind}</p>
-            <h1 className="text-4xl sm:text-6xl font-black tracking-tight mb-4 break-words">{title}</h1>
-            {subtitle && <div className="text-sm text-white/90 flex flex-wrap items-center gap-x-1">{subtitle}</div>}
+            <p className="text-sm font-bold mb-2">{kind}</p>
+            {onEditDetails && !liked ? (
+              <button
+                type="button"
+                onClick={onEditDetails}
+                className="text-left text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight mb-4 break-words hover:underline decoration-2 underline-offset-4"
+              >
+                {title}
+              </button>
+            ) : (
+              <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight mb-4 break-words">{title}</h1>
+            )}
+            {subtitle && (
+              <div className="text-sm text-white flex flex-wrap items-center gap-x-1.5 gap-y-1">{subtitle}</div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="px-6 py-4 flex items-center gap-5 bg-black/20">
+      <div className="px-6 py-5 flex items-center gap-5 bg-gradient-to-b from-black/40 to-transparent">
         {onPlay && (
           <button
             type="button"
@@ -100,6 +139,7 @@ export function CollectionHero({
             <ShuffleIcon />
           </button>
         )}
+        <div className="flex-1" />
         {actions}
       </div>
     </section>
@@ -121,7 +161,7 @@ export function formatTotalDuration(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   if (h >= 24) return `over ${h} hr`;
-  if (h > 0) return `${h} hr ${m} min`;
+  if (h > 0) return `about ${h} hr`;
   if (m > 0) return `${m} min ${s} sec`;
   return `${s} sec`;
 }

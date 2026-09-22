@@ -40,3 +40,11 @@ def new_track_relative_path(artist: str, title: str, ext: str) -> str:
 def new_art_relative_path(track_relative: str) -> str:
     p = Path(track_relative)
     return str(p.with_suffix(".jpg"))
+
+
+def playlist_cover_relative_path(user_id: int, playlist_id: int) -> str:
+    return f"_playlist_covers/{user_id}/{playlist_id}.jpg"
+
+
+def ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)

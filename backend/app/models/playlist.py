@@ -24,6 +24,7 @@ class Playlist(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_liked_songs: Mapped[bool] = mapped_column(default=False, nullable=False)
+    cover_relative_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

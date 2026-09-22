@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { Playlist } from "@/lib/api";
+import { getApiUrl, type Playlist } from "@/lib/api";
 
 type Props = {
   playlists: Playlist[];
@@ -19,20 +19,27 @@ export function PlaylistGrid({ playlists, emptyMessage }: Props) {
         <Link
           key={p.id}
           href={`/playlist/${p.id}`}
-          className="group rounded-md p-3 bg-panel hover:bg-panel-hover transition-colors"
+          className="group rounded-md p-3 bg-transparent hover:bg-white/10 transition-colors"
         >
           <div
-            className={`aspect-square rounded-md mb-3 flex items-center justify-center text-3xl font-bold ${
+            className={`aspect-square rounded-md mb-3 flex items-center justify-center text-3xl font-bold overflow-hidden shadow-lg ${
               p.is_liked_songs
                 ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] text-white"
                 : "bg-gradient-to-br from-[#333] to-[#1a1a1a] text-muted"
             }`}
           >
-            {p.is_liked_songs ? "♥" : p.name.charAt(0).toUpperCase()}
+            {p.is_liked_songs ? (
+              "♥"
+            ) : p.cover_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={`${getApiUrl()}${p.cover_url}`} alt="" className="w-full h-full object-cover" />
+            ) : (
+              p.name.charAt(0).toUpperCase()
+            )}
           </div>
-          <p className="font-semibold truncate text-white group-hover:underline">{p.name}</p>
+          <p className="font-semibold truncate text-white">{p.name}</p>
           <p className="text-xs text-muted mt-0.5">
-            {p.track_count} song{p.track_count === 1 ? "" : "s"}
+            Playlist · {p.track_count} song{p.track_count === 1 ? "" : "s"}
           </p>
         </Link>
       ))}

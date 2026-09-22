@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { api, type Playlist, type Track } from "@/lib/api";
+import { api, getApiUrl, type Playlist, type Track } from "@/lib/api";
 import { artistHref, splitArtistNames } from "@/lib/artists";
 
 type Filter = "playlists" | "artists";
@@ -141,13 +141,20 @@ export function Sidebar() {
                   }`}
                 >
                   <span
-                    className={`h-12 w-12 rounded shrink-0 flex items-center justify-center text-lg ${
+                    className={`h-12 w-12 rounded shrink-0 flex items-center justify-center text-lg overflow-hidden ${
                       p.is_liked_songs
                         ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] text-white"
                         : "bg-[#333] text-muted"
                     }`}
                   >
-                    {p.is_liked_songs ? "♥" : p.name.charAt(0).toUpperCase()}
+                    {p.is_liked_songs ? (
+                      "♥"
+                    ) : p.cover_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`${getApiUrl()}${p.cover_url}`} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      p.name.charAt(0).toUpperCase()
+                    )}
                   </span>
                   <span className="min-w-0">
                     <span className={`block truncate text-sm font-medium ${active ? "text-spotify" : "text-white"}`}>

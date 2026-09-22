@@ -55,36 +55,38 @@ export function TopBar() {
   const initial = (me?.display_name || "U").charAt(0).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-[#121212]/95 backdrop-blur-md">
-      <Link
-        href="/"
-        className={`h-8 w-8 rounded-full flex items-center justify-center ${
-          pathname === "/" ? "bg-white/20 text-white" : "bg-black/40 text-muted hover:text-white"
-        }`}
-        aria-label="Home"
+    <header className="sticky top-0 z-20 flex items-center gap-2 px-4 py-3 bg-gradient-to-b from-[#121212] to-[#121212]/80">
+      <form
+        onSubmit={search}
+        className="flex-1 max-w-xl flex items-center bg-[#242424] hover:bg-[#2a2a2a] focus-within:bg-[#2a2a2a] rounded-full h-12 overflow-hidden ring-0 focus-within:ring-2 focus-within:ring-white"
       >
-        <HomeIcon />
-      </Link>
-
-      <form onSubmit={search} className="flex-1 max-w-xl">
-        <label className="relative block">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted">
-            <SearchIcon />
-          </span>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="What do you want to play?"
-            className="w-full bg-[#242424] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-muted outline-none focus:ring-2 focus:ring-white"
-          />
-        </label>
+        <Link
+          href="/"
+          className={`h-12 w-12 shrink-0 flex items-center justify-center ${
+            pathname === "/" ? "text-white" : "text-muted hover:text-white"
+          }`}
+          aria-label="Home"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <HomeIcon />
+        </Link>
+        <span className="w-px h-6 bg-white/20" />
+        <span className="pl-3 text-muted">
+          <SearchIcon />
+        </span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="What do you want to play?"
+          className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder:text-muted outline-none"
+        />
       </form>
 
       <div className="relative ml-auto" ref={menuRef}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center ring-0 hover:scale-105 transition-transform"
+          className="h-8 w-8 rounded-full bg-[#5a5a5a] text-sm font-bold text-white flex items-center justify-center hover:scale-105 transition-transform"
           aria-label="Account menu"
           aria-expanded={open}
         >
@@ -145,7 +147,7 @@ function MenuLink({
 
 function HomeIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
+    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor" aria-hidden>
       <path d="M13.5 1.515a3 3 0 0 0-3 0L3 5.845a2 2 0 0 0-1 1.732V21a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6h4v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V7.577a2 2 0 0 0-1-1.732l-7.5-4.33z" />
     </svg>
   );

@@ -25,11 +25,6 @@ export default function LibraryPage() {
     load();
   }, [router]);
 
-  async function remove(id: number) {
-    await api(`/api/v1/tracks/${id}`, { method: "DELETE" });
-    load();
-  }
-
   async function upgrade(id: number) {
     await api("/api/v1/tracks/upgrade-quality", {
       method: "POST",
@@ -49,7 +44,7 @@ export default function LibraryPage() {
       <PlaylistGrid playlists={playlists} emptyMessage="No playlists yet — click + in the sidebar." />
 
       <h3 className="text-lg font-semibold mt-10 mb-3">All songs</h3>
-      <TrackTable tracks={tracks} onRemove={remove} onUpgrade={upgrade} emptyMessage="Your library is empty." />
+      <TrackTable tracks={tracks} onChanged={load} onUpgrade={upgrade} emptyMessage="Your library is empty." />
     </AppShell>
   );
 }
