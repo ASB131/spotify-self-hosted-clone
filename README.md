@@ -65,20 +65,9 @@ Then:
 
 When Lidarr is healthy, discovery/catalog downloads use **Lidarr only** (no YouTube mixes). YouTube remains for the extension and when Lidarr is off.
 
-### Linux multi-drive layout (example)
+### Linux multi-drive layout
 
-Clone compose into the SSD1 docker tree, point volumes at cache/media drives in `.env`:
-
-```bash
-# /ssd1_system/docker/spotify_clone/.env (excerpt)
-POSTGRES_DATA=/ssd2_cache/databases/spotify_clone_postgres
-REDIS_DATA=/ssd2_cache/caches/spotify_clone/redis
-APP_DATA=/ssd2_cache/caches/spotify_clone/app
-MUSIC_VOLUME=/ssd2_cache/spotify_clone_media
-LIDARR_CONFIG=/ssd2_cache/caches/spotify_clone/lidarr
-```
-
-Then `docker compose up -d --build` (or pull `IMAGE_TAG=main` images) and open the web UI — first visit runs **Admin setup**, then use **Setup guide** for Lidarr / cookies / Spotify.
+Paths are set in `deploy/.env.example` (Postgres / caches / media on SSD2). First visit creates the admin account; then use **Setup guide** for Lidarr, cookies, and Spotify.
 
 Catalog search uses **MusicBrainz**. **ListenBrainz** powers discovery recommendations (fresh releases / tags).
 
