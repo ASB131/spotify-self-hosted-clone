@@ -69,6 +69,25 @@ export async function downloadBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+export async function uploadFile<T>(path: string, file: File): Promise<T> {
+  const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
+  const form = new FormData();
+  form.append("file", file);
+  const headers: HeadersInit = {};
+  if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${getApiUrl()}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || res.statusText || "Upload failed");
+  }
+  return res.json();
+}
+
 export function streamUrl(trackId: number) {
   return `${getApiUrl()}/api/v1/tracks/${trackId}/stream`;
 }

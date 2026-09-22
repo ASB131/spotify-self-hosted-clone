@@ -54,15 +54,46 @@ export default function DownloadsPage() {
     setLive(connected);
   }, [connected]);
 
-  const active = jobs.filter((j) => j.status === "queued" || j.status === "running");
+  const finished = jobs.filter((j) => j.status === "completed" || j.status === "failed");
+
+  async function clearFinished() {
+    try {
+      await api<{ removed: number }>("/api/v1/downloads/jobs?finished_only=true", { method: "DELETE" });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Clear failed");
+    }
+  }
+
+  async function clearAll() {
+    if (!window.confirm("Clear all download history including in-progress jobs?")) return;
+    try {
+      await api<{ removed: number }>("/api/v1/downloads/jobs?finished_only=false", { method: "DELETE" });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Clear failed");
+    }
+  }
 
   return (
     <AppShell>
-      <div className="flex items-center justify-between gap-4 mb-2">
+      <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
         <h1 className="text-2xl font-bold">Downloads</h1>
-        <span className={`text-xs ${live ? "text-spotify" : "text-muted"}`}>
-          {live ? "Live updates connected" : "Reconnecting… (still polling every 4s)"}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`text-xs ${live ? "text-spotify" : "text-muted"}`}>
+            {live ? "Live updates connected" : "Reconnecting… (still polling every 4s)"}
+          </span>
+          {finished.length > 0 && (
+            <button type="button" onClick={clearFinished} className="text-xs bg-white/10 px-3 py-1.5 rounded-full">
+              Clear finished ({finished.length})
+            </button>
+          )}
+          {jobs.length > 0 && (
+            <button type="button" onClick={clearAll} className="text-xs text-red-400 underline">
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
       <p className="text-sm text-muted mb-6 max-w-2xl">
         Progress for YouTube saves (extension or web) and Spotify sync queues. When a job reaches 100%, the track
@@ -70,8 +101,10 @@ export default function DownloadsPage() {
       </p>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-      {active.length > 0 && (
-        <p className="text-sm text-amber-200/90 mb-4">{active.length} job(s) in progress</p>
+      {jobs.filter((j) => j.status === "queued" || j.status === "running").length > 0 && (
+        <p className="text-sm text-amber-200/90 mb-4">
+          {jobs.filter((j) => j.status === "queued" || j.status === "running").length} job(s) in progress
+        </p>
       )}
 
       {jobs.length === 0 ? (

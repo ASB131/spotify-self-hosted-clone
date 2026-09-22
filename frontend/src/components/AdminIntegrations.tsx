@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, uploadFile } from "@/lib/api";
 
 type SpotifyForm = {
   client_id: string;
@@ -21,14 +21,22 @@ type LidarrForm = {
   note: string;
 };
 
+type CookiesStatus = {
+  configured: boolean;
+  source: string | null;
+  hint: string;
+};
+
 export function AdminIntegrations() {
   const [spotify, setSpotify] = useState<SpotifyForm | null>(null);
   const [lidarr, setLidarr] = useState<LidarrForm | null>(null);
+  const [cookies, setCookies] = useState<CookiesStatus | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = () => {
     api<SpotifyForm>("/api/v1/admin/integrations/spotify").then(setSpotify);
     api<LidarrForm>("/api/v1/admin/integrations/lidarr").then(setLidarr);
+    api<CookiesStatus>("/api/v1/admin/youtube/cookies").then(setCookies).catch(() => setCookies(null));
   };
 
   useEffect(() => {
@@ -75,6 +83,29 @@ export function AdminIntegrations() {
     }
   }
 
+  async function onCookiesSelected(file: File | null) {
+    if (!file) return;
+    setMsg(null);
+    try {
+      const status = await uploadFile<CookiesStatus>("/api/v1/admin/youtube/cookies", file);
+      setCookies(status);
+      setMsg(status.hint);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Cookie upload failed");
+    }
+  }
+
+  async function clearCookies() {
+    setMsg(null);
+    try {
+      const status = await api<CookiesStatus>("/api/v1/admin/youtube/cookies", { method: "DELETE" });
+      setCookies(status);
+      setMsg(status.hint);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Clear failed");
+    }
+  }
+
   if (!spotify || !lidarr) return <p className="text-sm text-muted">Loading integrations…</p>;
 
   return (
@@ -82,13 +113,36 @@ export function AdminIntegrations() {
       <h3 className="font-semibold text-lg">Integrations</h3>
       {msg && <p className="text-sm text-spotify">{msg}</p>}
 
+      <div className="bg-panel p-4 rounded-lg space-y-3">
+        <h4 className="font-medium">YouTube downloads</h4>
+        <p className="text-xs text-muted">
+          Downloads use yt-dlp with mobile YouTube clients — <strong className="text-white">cookies are optional</strong>.
+          Most videos work without them. Upload cookies only if YouTube starts blocking your server.
+        </p>
+        {cookies && (
+          <p className={`text-xs ${cookies.configured ? "text-spotify" : "text-muted"}`}>
+            Status: {cookies.configured ? `OK (${cookies.source})` : "No cookies — OK for most tracks"}
+          </p>
+        )}
+        <label className="block text-sm">
+          Upload cookies.txt (optional)
+          <input
+            type="file"
+            accept=".txt,text/plain"
+            className="mt-1 block w-full text-sm"
+            onChange={(e) => onCookiesSelected(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        {cookies?.configured && cookies.source === "uploaded" && (
+          <button type="button" onClick={clearCookies} className="text-xs text-red-400 underline">
+            Remove uploaded cookies
+          </button>
+        )}
+      </div>
+
       <form onSubmit={saveSpotify} className="bg-panel p-4 rounded-lg space-y-3">
         <h4 className="font-medium">Spotify Developer app</h4>
         <p className="text-xs text-muted">{spotify.redirect_help}</p>
-        <p className="text-xs text-amber-200/90">
-          Paste the redirect URI below into Spotify Dashboard → your app → Redirect URIs. The &quot;not secure&quot; warning
-          for <code className="text-white">http://localhost</code> is normal for local dev.
-        </p>
         <label className="block text-sm">
           Client ID
           <input
@@ -108,7 +162,7 @@ export function AdminIntegrations() {
           />
         </label>
         <label className="block text-sm">
-          Redirect URI (copy to Spotify Dashboard)
+          Redirect URI
           <input
             className="w-full mt-1 bg-black/30 rounded px-3 py-2 font-mono text-xs"
             value={spotify.redirect_uri}
@@ -116,7 +170,7 @@ export function AdminIntegrations() {
           />
         </label>
         <label className="block text-sm">
-          Public web URL (after OAuth)
+          Public web URL
           <input
             className="w-full mt-1 bg-black/30 rounded px-3 py-2"
             value={spotify.public_web_url}
@@ -126,7 +180,6 @@ export function AdminIntegrations() {
         <button type="submit" className="bg-spotify text-black px-4 py-2 rounded-full text-sm font-semibold">
           Save Spotify
         </button>
-        {spotify.configured && <p className="text-xs text-spotify">Spotify app credentials are active.</p>}
       </form>
 
       <form onSubmit={saveLidarr} className="bg-panel p-4 rounded-lg space-y-3">
@@ -146,7 +199,6 @@ export function AdminIntegrations() {
           <input
             type="password"
             className="w-full mt-1 bg-black/30 rounded px-3 py-2"
-            placeholder={lidarr.has_api_key ? "Leave blank to keep" : "From Lidarr → Settings → General"}
             value={lidarr.api_key}
             onChange={(e) => setLidarr({ ...lidarr, api_key: e.target.value })}
           />

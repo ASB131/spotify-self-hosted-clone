@@ -117,21 +117,21 @@ def list_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_
     ]
 
 
-@router.get("/jobs/{job_id}", response_model=DownloadJobPublic)
-def get_job(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    job = db.get(DownloadJob, job_id)
-    if not job or job.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return DownloadJobPublic(
-        id=job.id,
-        celery_task_id=job.celery_task_id,
-        url=job.url,
-        title=job.title,
-        artist=job.artist,
-        audio_format=job.audio_format,
-        status=job.status.value,
-        progress=job.progress,
-        stage=job.stage,
-        error=job.error,
-        track_id=job.track_id,
-    )
+@router.delete("/jobs")
+def clear_jobs(
+    finished_only: bool = True,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove finished (or all) download log rows for the current user."""
+    q = select(DownloadJob).where(DownloadJob.user_id == user.id)
+    rows = list(db.scalars(q).all())
+    removed = 0
+    for job in rows:
+        if finished_only and job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+            continue
+        db.delete(job)
+        removed += 1
+    db.commit()
+    return {"removed": removed}
+

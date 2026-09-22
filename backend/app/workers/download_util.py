@@ -39,27 +39,35 @@ def extract_youtube_id(url: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _cookie_candidates() -> list[Path]:
+    """Prefer admin-uploaded cookies on writable volume, then Docker-mounted file."""
+    return [
+        Path(settings.app_data) / "cookies.txt",
+        Path(settings.ytdlp_cookies_path),
+    ]
+
+
+def _cookie_source_path() -> Optional[Path]:
+    for src in _cookie_candidates():
+        if not src.is_file():
+            continue
+        try:
+            text = src.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        data_lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        if len(data_lines) >= 3:
+            return src
+    return None
+
+
 def _writable_cookiefile() -> Optional[str]:
     """
-    yt-dlp may update cookies on disk. Docker mounts cookies.txt :ro, so copy to /tmp.
+    yt-dlp may update cookies on disk. Copy to /tmp so read-only mounts never break downloads.
+    Cookies are optional — android player clients often work without them.
     """
-    src = Path(settings.ytdlp_cookies_path)
-    if not src.is_file():
-        logger.warning("cookies.txt missing at %s — YouTube may block downloads", src)
-        return None
-    try:
-        text = src.read_text(encoding="utf-8", errors="ignore")
-    except OSError as exc:
-        logger.warning("Cannot read cookies.txt: %s", exc)
-        return None
-    # Real Netscape cookie files have tab-separated rows; ignore comment-only placeholders
-    data_lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-    if len(data_lines) < 3:
-        logger.warning(
-            "cookies.txt looks empty/placeholder (%s data lines). Export real YouTube cookies "
-            "from your browser into ./cookies.txt and restart the worker.",
-            len(data_lines),
-        )
+    src = _cookie_source_path()
+    if not src:
         return None
     dest = Path(tempfile.gettempdir()) / "ytdlp_cookies.txt"
     try:
@@ -71,6 +79,11 @@ def _writable_cookiefile() -> Optional[str]:
 
 
 def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
+    """
+    Flexible format selection + alternate YouTube clients to avoid
+    "Requested format is not available" without requiring cookies.
+    """
+    codec = "flac" if audio_format == "flac" else "mp3"
     opts: dict = {
         "outtmpl": outtmpl,
         "quiet": True,
@@ -81,31 +94,30 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
         "ignoreerrors": False,
         "writethumbnail": True,
         "embedthumbnail": False,
+        # Prefer any audio; fall back to muxed best and let FFmpeg extract
+        "format": "bestaudio/bestvideo+bestaudio/best",
+        "merge_output_format": "mkv",
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": codec,
+                "preferredquality": "0",
+            }
+        ],
+        # Android/iOS clients expose formats when web client is empty/blocked
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "web"],
+            }
+        },
     }
     cookiefile = _writable_cookiefile()
     if cookiefile:
         opts["cookiefile"] = cookiefile
+        logger.info("Using YouTube cookies from uploaded/mounted file")
     else:
-        logger.warning("Proceeding without cookies — downloads may fail")
+        logger.info("No cookies configured — using mobile YouTube clients")
 
-    if audio_format == "flac":
-        opts["format"] = "bestaudio/best"
-        opts["postprocessors"] = [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "flac",
-                "preferredquality": "0",
-            }
-        ]
-    else:
-        opts["format"] = "bestaudio/best"
-        opts["postprocessors"] = [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "0",
-            }
-        ]
     return opts
 
 
@@ -126,10 +138,17 @@ def download_youtube_audio(
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
-    except Exception as exc:
-        shutil.rmtree(tmp, ignore_errors=True)
-        logger.exception("yt-dlp failed for %s", url)
-        raise RuntimeError(f"Download failed: {exc}") from exc
+    except Exception as first_exc:
+        # Second attempt: absolute loosest format string
+        logger.warning("Primary yt-dlp attempt failed (%s); retrying with format=best", first_exc)
+        opts["format"] = "best"
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except Exception as exc:
+            shutil.rmtree(tmp, ignore_errors=True)
+            logger.exception("yt-dlp failed for %s", url)
+            raise RuntimeError(f"Download failed: {exc}") from exc
 
     video_id = info.get("id") or extract_youtube_id(url)
     ext = "flac" if audio_format == "flac" else "mp3"
