@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, artUrl, type Playlist, type Track } from "@/lib/api";
+import { api, artUrl, downloadTrackFile, type Playlist, type Track } from "@/lib/api";
 import { formatDuration, formatRelativeDate } from "@/lib/format";
 import { ArtistLinks } from "@/lib/artists";
 import { usePlayerStore } from "@/store/player";
@@ -46,6 +46,7 @@ export function TrackTable({
   const [bulkAlbum, setBulkAlbum] = useState("");
   const [bulkArtist, setBulkArtist] = useState("");
   const [localTracks, setLocalTracks] = useState(tracks);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setLocalTracks(tracks);
@@ -139,6 +140,61 @@ export function TrackTable({
     }
   }
 
+  function downloadTracks(list: Track[]) {
+    list.forEach((t, i) => {
+      window.setTimeout(() => downloadTrackFile(t), i * 350);
+    });
+  }
+
+  function prunePlayerQueue(ids: Set<number>) {
+    const state = usePlayerStore.getState();
+    const nextQueue = state.queue.filter((t) => !ids.has(t.id));
+    if (nextQueue.length === state.queue.length) return;
+    if (!nextQueue.length) {
+      state.clearQueueFully();
+      return;
+    }
+    let idx = nextQueue.findIndex((t) => t.id === state.current?.id);
+    if (idx < 0) idx = Math.min(Math.max(0, state.queueIndex), nextQueue.length - 1);
+    const track = nextQueue[idx];
+    const wasPlaying = state.isPlaying && state.current && ids.has(state.current.id);
+    usePlayerStore.setState({
+      queue: nextQueue,
+      queueIndex: idx,
+      current: track,
+    });
+    if (wasPlaying) {
+      state.playAt(idx);
+    }
+  }
+
+  async function deleteTracks(list: Track[]) {
+    if (!list.length || busy) return;
+    const label = list.length === 1 ? `"${list[0].title}"` : `${list.length} songs`;
+    if (!window.confirm(`Delete ${label} from your library? This cannot be undone.`)) return;
+    setBusy(true);
+    const ids = new Set(list.map((t) => t.id));
+    try {
+      for (const t of list) {
+        try {
+          await api(`/api/v1/tracks/${t.id}`, { method: "DELETE" });
+        } catch {
+          /* continue deleting others */
+        }
+      }
+      setLocalTracks((prev) => prev.filter((t) => !ids.has(t.id)));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      prunePlayerQueue(ids);
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function applyBulk() {
     const ids = [...selected];
     if (!ids.length) return;
@@ -184,6 +240,16 @@ export function TrackTable({
                 }))
               : [{ id: "none", label: "No other playlists", onClick: () => undefined, disabled: true }],
         },
+        {
+          id: "download",
+          label: "Download",
+          onClick: () => downloadTracks([menu.track]),
+        },
+        {
+          id: "edit",
+          label: "Edit metadata",
+          onClick: () => setEditing(menu.track),
+        },
         ...(canRemoveFromPlaylist
           ? [
               {
@@ -196,12 +262,22 @@ export function TrackTable({
               } satisfies ContextMenuItem,
             ]
           : []),
+        {
+          id: "delete",
+          label: "Delete from library",
+          danger: true,
+          onClick: () => {
+            void deleteTracks([menu.track]);
+          },
+        },
       ]
     : [];
 
   if (localTracks.length === 0) {
     return <p className="text-sm text-muted py-8">{emptyMessage || "No songs yet."}</p>;
   }
+
+  const selectedTracks = sorted.filter((t) => selected.has(t.id));
 
   return (
     <>
@@ -211,14 +287,14 @@ export function TrackTable({
           <button
             type="button"
             className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
-            onClick={() => playNext(sorted.filter((t) => selected.has(t.id)))}
+            onClick={() => playNext(selectedTracks)}
           >
             Play next
           </button>
           <button
             type="button"
             className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
-            onClick={() => addToQueue(sorted.filter((t) => selected.has(t.id)))}
+            onClick={() => addToQueue(selectedTracks)}
           >
             Add to queue
           </button>
@@ -228,6 +304,21 @@ export function TrackTable({
             onClick={() => setBulkEdit(true)}
           >
             Edit metadata
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15"
+            onClick={() => downloadTracks(selectedTracks)}
+          >
+            Download
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            className="px-3 py-1 rounded-full bg-white/10 hover:bg-red-500/20 text-red-300 disabled:opacity-50"
+            onClick={() => void deleteTracks(selectedTracks)}
+          >
+            Delete
           </button>
           <button type="button" className="text-muted hover:text-white ml-auto" onClick={() => setSelected(new Set())}>
             Clear

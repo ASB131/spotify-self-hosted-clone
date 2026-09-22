@@ -287,6 +287,21 @@ export function streamUrl(track: Track | number) {
   return `${getApiUrl()}/api/v1/tracks/${id}/stream`;
 }
 
+/** Trigger a browser file download of the stored audio (not loaded into JS memory). */
+export function downloadTrackFile(track: Track) {
+  if (typeof document === "undefined") return;
+  const ext = (track.format || "mp3").toLowerCase();
+  const raw = `${track.artist || "Unknown"} - ${track.title || "track"}.${ext}`;
+  const filename = raw.replace(/[<>:"/\\|?*\x00-\x1f]+/g, "_").trim().slice(0, 180) || `track.${ext}`;
+  const a = document.createElement("a");
+  a.href = `${getApiUrl()}/api/v1/tracks/${track.id}/stream?download=1`;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export function artUrl(track: Track) {
   if (!track.art_url) return null;
   return `${getApiUrl()}${track.art_url}`;

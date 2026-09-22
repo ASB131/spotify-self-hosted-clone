@@ -1,9 +1,11 @@
 """HTTP Range streaming with optional FLAC transcoding for unsupported clients."""
 
 import logging
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import quote
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -51,7 +53,25 @@ def _parse_range(range_header: str, file_size: int) -> Tuple[int, int]:
     return start, end
 
 
-def _stream_file_range(path: Path, start: int, end: int, content_type: str) -> StreamingResponse:
+def _download_filename(track: Track) -> str:
+    ext = "flac" if track.format == AudioFormat.FLAC else "mp3"
+    raw = f"{track.artist or 'Unknown'} - {track.title or 'track'}.{ext}"
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw).strip(" .") or f"track.{ext}"
+    return cleaned[:180]
+
+
+def _content_disposition(filename: str) -> str:
+    ascii_name = filename.encode("ascii", "replace").decode("ascii").replace('"', "_")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
+def _stream_file_range(
+    path: Path,
+    start: int,
+    end: int,
+    content_type: str,
+    extra_headers: Optional[dict] = None,
+) -> StreamingResponse:
     file_size = path.stat().st_size
     length = end - start + 1
 
@@ -71,6 +91,8 @@ def _stream_file_range(path: Path, start: int, end: int, content_type: str) -> S
         "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Content-Length": str(length),
     }
+    if extra_headers:
+        headers.update(extra_headers)
     return StreamingResponse(iter_file(), status_code=206, media_type=content_type, headers=headers)
 
 
@@ -166,19 +188,30 @@ def stream_track(db: Session, user_id: int, track_id: int, request: Request) -> 
         raise HTTPException(status_code=404, detail="Audio file missing on disk")
 
     force_mp3 = request.query_params.get("transcode") == "mp3"
+    as_download = request.query_params.get("download") in ("1", "true", "yes")
     accept = request.headers.get("accept")
     ua = request.headers.get("user-agent")
     range_header = request.headers.get("range")
 
-    if track.format == AudioFormat.FLAC and (force_mp3 or not _client_supports_flac(accept, ua)):
+    # Local file save always wants the stored format (never a length-less MP3 pipe).
+    if (
+        not as_download
+        and track.format == AudioFormat.FLAC
+        and (force_mp3 or not _client_supports_flac(accept, ua))
+    ):
         return _transcode_flac_to_mp3_stream(path)
 
     content_type = "audio/mpeg" if track.format == AudioFormat.MP3 else "audio/flac"
     file_size = path.stat().st_size
+    extra = {"Content-Disposition": _content_disposition(_download_filename(track))} if as_download else None
 
-    if range_header:
+    if range_header and not as_download:
         start, end = _parse_range(range_header, file_size)
         return _stream_file_range(path, start, end, content_type)
+
+    if range_header and as_download:
+        start, end = _parse_range(range_header, file_size)
+        return _stream_file_range(path, start, end, content_type, extra_headers=extra)
 
     def iter_full():
         with open(path, "rb") as f:
@@ -188,11 +221,15 @@ def stream_track(db: Session, user_id: int, track_id: int, request: Request) -> 
                     break
                 yield chunk
 
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(file_size),
+    }
+    if extra:
+        headers.update(extra)
+
     return StreamingResponse(
         iter_full(),
         media_type=content_type,
-        headers={
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-        },
+        headers=headers,
     )
