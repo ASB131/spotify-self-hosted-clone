@@ -44,8 +44,22 @@ def _writable_cookiefile() -> Optional[str]:
     yt-dlp may update cookies on disk. Docker mounts cookies.txt :ro, so copy to /tmp.
     """
     src = Path(settings.ytdlp_cookies_path)
-    if not src.is_file() or src.stat().st_size < 40:
-        logger.warning("cookies.txt missing or empty at %s — YouTube may block downloads", src)
+    if not src.is_file():
+        logger.warning("cookies.txt missing at %s — YouTube may block downloads", src)
+        return None
+    try:
+        text = src.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        logger.warning("Cannot read cookies.txt: %s", exc)
+        return None
+    # Real Netscape cookie files have tab-separated rows; ignore comment-only placeholders
+    data_lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    if len(data_lines) < 3:
+        logger.warning(
+            "cookies.txt looks empty/placeholder (%s data lines). Export real YouTube cookies "
+            "from your browser into ./cookies.txt and restart the worker.",
+            len(data_lines),
+        )
         return None
     dest = Path(tempfile.gettempdir()) / "ytdlp_cookies.txt"
     try:
