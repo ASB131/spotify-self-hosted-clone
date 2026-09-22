@@ -40,7 +40,7 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
   const [hasMore, setHasMore] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [queued, setQueued] = useState<Set<string>>(new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const abortRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
@@ -105,8 +105,9 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
     return () => obs.disconnect();
   }, [query, loading, loadingMore, hasMore, fetchPage]);
 
-  async function download(hit: YoutubeHit) {
-    setBusyId(hit.id);
+  async function download(hit: YoutubeHit, format: "mp3" | "flac") {
+    const key = `${hit.id}:${format}`;
+    setBusyKey(key);
     try {
       const res = await api<{ job_id: number }>("/api/v1/downloads", {
         method: "POST",
@@ -114,6 +115,7 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
           url: hit.url,
           title: hit.title,
           artist: hit.artist,
+          format,
           added_via: "youtube_search",
         }),
       });
@@ -123,7 +125,7 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
     } catch (e) {
       setError(e instanceof Error ? e.message : "Download failed");
     } finally {
-      setBusyId(null);
+      setBusyKey(null);
     }
   }
 
@@ -170,7 +172,7 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
                     {hit.duration_seconds != null ? ` · ${formatDuration(hit.duration_seconds)}` : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
                   <button
                     type="button"
                     onClick={() => setPreviewId(isPreview ? null : hit.id)}
@@ -182,11 +184,27 @@ export function YouTubeResults({ query, heading = "YouTube", pageSize = 12, onQu
                   </button>
                   <button
                     type="button"
-                    disabled={!!busyId || isQueued}
-                    onClick={() => void download(hit)}
+                    disabled={!!busyKey || isQueued}
+                    onClick={() => void download(hit, "mp3")}
                     className="text-xs font-semibold px-3 py-1.5 rounded-full bg-spotify text-black disabled:opacity-40"
                   >
-                    {isQueued ? "Queued" : busyId === hit.id ? "…" : "Download"}
+                    {isQueued
+                      ? "Queued"
+                      : busyKey === `${hit.id}:mp3`
+                        ? "…"
+                        : "Download MP3"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!busyKey || isQueued}
+                    onClick={() => void download(hit, "flac")}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/20 text-white disabled:opacity-40"
+                  >
+                    {isQueued
+                      ? "Queued"
+                      : busyKey === `${hit.id}:flac`
+                        ? "…"
+                        : "Download FLAC"}
                   </button>
                 </div>
               </div>
