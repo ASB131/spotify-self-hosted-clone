@@ -7,14 +7,12 @@ from app.api.v1 import (
     admin_setup,
     artists,
     auth,
-    catalog,
     discovery,
     downloads,
     extension,
     integrations_admin,
     playlists,
     setup,
-    spotify,
     tracks,
     ws,
     youtube_admin,
@@ -27,12 +25,10 @@ api_router.include_router(tracks.router)
 api_router.include_router(artists.router)
 api_router.include_router(playlists.router)
 api_router.include_router(discovery.router)
-api_router.include_router(catalog.router)
 api_router.include_router(downloads.router)
 api_router.include_router(admin.router)
 api_router.include_router(integrations_admin.router)
 api_router.include_router(admin_setup.router)
 api_router.include_router(youtube_admin.router)
-api_router.include_router(spotify.router)
 api_router.include_router(extension.router)
 api_router.include_router(ws.router)

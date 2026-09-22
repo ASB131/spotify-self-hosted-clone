@@ -5,21 +5,10 @@ from pydantic import BaseModel
 
 class ServerSetupPublic(BaseModel):
     needs_setup: bool
-    spotify_server_configured: bool
     youtube_cookies_ready: bool
-    spotify_redirect_uri: str
     public_web_url: str
-    lidarr_configured: bool = False
-    lidarr_reachable: bool = False
-    lidarr_hint: str | None = None
-    listenbrainz_ok: bool = False
-    musicbrainz_ok: bool = False
 
 
 class UserSetupChecklist(BaseModel):
-    spotify_server_configured: bool
-    spotify_account_linked: bool
-    spotify_redirect_uri: str
+    youtube_cookies_ready: bool
     extension_cors_hint: str
-    lidarr_ready: bool = False
-    lidarr_hint: str | None = None

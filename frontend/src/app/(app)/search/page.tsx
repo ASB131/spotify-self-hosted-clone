@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api, getApiUrl, type Track } from "@/lib/api";
+import { artistHref, splitArtistNames } from "@/lib/artists";
 import { usePlayerStore } from "@/store/player";
 
 type SearchResults = {
@@ -15,28 +16,6 @@ type SearchResults = {
     track_count?: number;
     cover_url?: string | null;
   }[];
-};
-
-type CatalogArtist = {
-  mbid: string;
-  name: string;
-  disambiguation?: string | null;
-};
-
-type CatalogRecording = {
-  recording_mbid: string;
-  title: string;
-  artist: string;
-  artist_mbid?: string | null;
-  album?: string | null;
-  release_mbid?: string | null;
-  duration_ms?: number | null;
-  art_url?: string | null;
-};
-
-type CatalogSearch = {
-  artists: CatalogArtist[];
-  recordings: CatalogRecording[];
 };
 
 type Tab = "all" | "playlists" | "songs" | "artists";
@@ -78,7 +57,6 @@ function ArtThumb({
   round?: boolean;
   label?: string;
 }) {
-  // Prefer library/local art only — skip broken external CAA for list rows when missing
   const src = artSrc(url);
   if (!src || src.includes("coverartarchive.org")) {
     return <LetterAvatar label={label || ""} round={round} />;
@@ -106,9 +84,6 @@ function SearchInner() {
   const params = useSearchParams();
   const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
   const [results, setResults] = useState<SearchResults | null>(null);
-  const [catalog, setCatalog] = useState<CatalogSearch | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [loading, setLoading] = useState(false);
   const q = (params.get("q") || "").trim();
@@ -116,20 +91,16 @@ function SearchInner() {
   useEffect(() => {
     if (q.length < 2) {
       setResults(null);
-      setCatalog(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    setMsg(null);
-    Promise.all([
-      api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(q)}`),
-      api<CatalogSearch>(`/api/v1/catalog/search?q=${encodeURIComponent(q)}`).catch(() => null),
-    ])
-      .then(([lib, cat]) => {
-        if (cancelled) return;
-        setResults(lib);
-        setCatalog(cat);
+    api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(q)}`)
+      .then((lib) => {
+        if (!cancelled) setResults(lib);
+      })
+      .catch(() => {
+        if (!cancelled) setResults(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -139,29 +110,30 @@ function SearchInner() {
     };
   }, [q]);
 
-  async function downloadRecording(r: CatalogRecording) {
-    setBusyId(r.recording_mbid);
-    setMsg(null);
-    try {
-      const res = await api<{ via: string }>("/api/v1/catalog/download", {
-        method: "POST",
-        body: JSON.stringify({
-          title: r.title,
-          artist: r.artist,
-          album: r.album,
-          recording_mbid: r.recording_mbid,
-          release_mbid: r.release_mbid,
-        }),
-      });
-      setMsg(`Queued via ${res.via}. Check Downloads for progress.`);
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Download failed");
-    } finally {
-      setBusyId(null);
+  const libraryArtists = useMemo(() => {
+    if (!results?.tracks?.length) return [] as { name: string; trackCount: number; art_url?: string | null }[];
+    const qLower = q.toLowerCase();
+    const map = new Map<string, { name: string; trackCount: number; art_url?: string | null }>();
+    for (const t of results.tracks) {
+      for (const name of splitArtistNames(t.artist)) {
+        if (qLower && !name.toLowerCase().includes(qLower) && !qLower.includes(name.toLowerCase())) {
+          // Still include if the raw artist string matched search
+          if (!(t.artist || "").toLowerCase().includes(qLower)) continue;
+        }
+        const key = name.toLowerCase();
+        const prev = map.get(key);
+        if (prev) {
+          prev.trackCount += 1;
+          if (!prev.art_url && t.art_url) prev.art_url = t.art_url;
+        } else {
+          map.set(key, { name, trackCount: 1, art_url: t.art_url });
+        }
+      }
     }
-  }
+    return [...map.values()].sort((a, b) => b.trackCount - a.trackCount || a.name.localeCompare(b.name));
+  }, [results, q]);
 
-  const topArtist = catalog?.artists?.[0];
+  const topArtist = libraryArtists[0];
   const chips: { id: Tab; label: string }[] = [
     { id: "all", label: "All" },
     { id: "songs", label: "Songs" },
@@ -176,7 +148,7 @@ function SearchInner() {
 
   return (
     <div className="pb-8">
-      {(results || catalog) && (
+      {results && (
         <div className="flex flex-wrap gap-2 mb-6">
           {chips.map((c) => (
             <button
@@ -194,25 +166,28 @@ function SearchInner() {
       )}
 
       {loading && <p className="text-sm text-muted mb-4">Searching…</p>}
-      {msg && <p className="text-sm text-spotify mb-4">{msg}</p>}
 
       {show("artists") && topArtist && (
         <section className="mb-8 flex items-center gap-5 rounded-lg bg-gradient-to-r from-[#3a3a3a] to-[#181818] p-5">
-          <LetterAvatar label={topArtist.name} round size="lg" />
+          {topArtist.art_url ? (
+            <div className="w-28 h-28 rounded-full overflow-hidden shrink-0 bg-[#282828]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={artSrc(topArtist.art_url)!} alt="" className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <LetterAvatar label={topArtist.name} round size="lg" />
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted mb-1">Artist</p>
-            <Link
-              href={`/catalog/artist/${topArtist.mbid}`}
-              className="text-3xl sm:text-4xl font-bold hover:underline truncate block"
-            >
+            <Link href={artistHref(topArtist.name)} className="text-3xl sm:text-4xl font-bold hover:underline truncate block">
               {topArtist.name}
             </Link>
-            {topArtist.disambiguation && (
-              <p className="text-sm text-muted mt-1">{topArtist.disambiguation}</p>
-            )}
+            <p className="text-sm text-muted mt-1">
+              {topArtist.trackCount} song{topArtist.trackCount === 1 ? "" : "s"} in your library
+            </p>
           </div>
           <Link
-            href={`/catalog/artist/${topArtist.mbid}`}
+            href={artistHref(topArtist.name)}
             className="hidden sm:inline-flex bg-spotify text-black font-bold w-12 h-12 rounded-full items-center justify-center text-xl shrink-0"
             aria-label="Open artist"
           >
@@ -251,22 +226,21 @@ function SearchInner() {
         </section>
       )}
 
-      {show("artists") && catalog && catalog.artists.length > 1 && (
+      {show("artists") && libraryArtists.length > 1 && (
         <section className="mb-8">
           <h3 className="text-xl font-bold mb-3">Artists</h3>
           <ul className="space-y-1">
-            {catalog.artists.slice(1).map((a) => (
-              <li key={a.mbid}>
+            {libraryArtists.slice(1).map((a) => (
+              <li key={a.name}>
                 <Link
-                  href={`/catalog/artist/${a.mbid}`}
+                  href={artistHref(a.name)}
                   className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10"
                 >
                   <LetterAvatar label={a.name} round />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">{a.name}</p>
                     <p className="text-xs text-muted">
-                      Artist
-                      {a.disambiguation ? ` · ${a.disambiguation}` : ""}
+                      Artist · {a.trackCount} song{a.trackCount === 1 ? "" : "s"}
                     </p>
                   </div>
                   <span className="text-xs text-muted">Artist</span>
@@ -300,37 +274,8 @@ function SearchInner() {
                 </button>
               </li>
             ))}
-            {(catalog?.recordings || []).map((r) => (
-              <li key={r.recording_mbid}>
-                <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10">
-                  <LetterAvatar label={r.title} />
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/catalog/recording/${r.recording_mbid}`}
-                      className="font-medium truncate block hover:underline"
-                    >
-                      {r.title}
-                    </Link>
-                    <p className="text-xs text-muted truncate">
-                      Song · {r.artist}
-                      {r.album ? ` · ${r.album}` : ""}
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted hidden sm:inline">Song</span>
-                  <button
-                    type="button"
-                    disabled={busyId === r.recording_mbid}
-                    onClick={() => downloadRecording(r)}
-                    className="shrink-0 w-8 h-8 rounded-full border border-white/30 text-white/80 hover:border-white hover:text-white flex items-center justify-center text-lg leading-none disabled:opacity-40"
-                    title="Download"
-                  >
-                    {busyId === r.recording_mbid ? "…" : "+"}
-                  </button>
-                </div>
-              </li>
-            ))}
-            {!loading && !(results?.tracks?.length || catalog?.recordings?.length) && (
-              <p className="text-sm text-muted px-2">No songs found.</p>
+            {!loading && !(results?.tracks?.length) && (
+              <p className="text-sm text-muted px-2">No songs in your library match this search.</p>
             )}
           </ul>
         </section>

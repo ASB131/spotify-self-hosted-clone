@@ -13,6 +13,20 @@ type Filter = "playlists" | "artists";
 
 type MenuState = { x: number; y: number; playlist: Playlist } | null;
 
+type StorageStats = {
+  storage_used_bytes: number;
+  storage_quota_bytes: number;
+  media_disk_total_bytes?: number;
+  media_disk_used_bytes?: number;
+};
+
+function formatGb(n: number) {
+  if (!n || !Number.isFinite(n)) return "0 GB";
+  const gb = n / 1024 ** 3;
+  if (gb < 10) return `${gb.toFixed(1)} GB`;
+  return `${Math.round(gb)} GB`;
+}
+
 export function Sidebar() {
   useAmpersandKeeps();
   const pathname = usePathname();
@@ -26,12 +40,18 @@ export function Sidebar() {
   const [newName, setNewName] = useState("");
   const [menu, setMenu] = useState<MenuState>(null);
   const [editing, setEditing] = useState<Playlist | null>(null);
+  const [storage, setStorage] = useState<StorageStats | null>(null);
 
   const load = () => {
-    Promise.all([api<Playlist[]>("/api/v1/playlists"), api<Track[]>("/api/v1/tracks")])
-      .then(([p, t]) => {
+    Promise.all([
+      api<Playlist[]>("/api/v1/playlists"),
+      api<Track[]>("/api/v1/tracks"),
+      api<StorageStats>("/api/v1/auth/me/stats").catch(() => null),
+    ])
+      .then(([p, t, s]) => {
         setPlaylists(p);
         setTracks(t);
+        if (s) setStorage(s);
       })
       .catch(() => {
         setPlaylists([]);
@@ -103,6 +123,11 @@ export function Sidebar() {
         },
       ]
     : [];
+
+  const usedPct =
+    storage && storage.storage_quota_bytes > 0
+      ? Math.min(100, (storage.storage_used_bytes / storage.storage_quota_bytes) * 100)
+      : 0;
 
   return (
     <aside className="w-[280px] shrink-0 flex flex-col rounded-lg bg-panel overflow-hidden">
@@ -224,7 +249,7 @@ export function Sidebar() {
                     active ? "bg-white/10" : "hover:bg-white/5"
                   }`}
                 >
-                  <span className="h-12 w-12 rounded-full shrink-0 bg-[#333] flex items-center justify-center text-sm font-bold text-muted">
+                  <span className="h-12 w-12 rounded-full shrink-0 bg-[#333] text-muted flex items-center justify-center text-lg font-bold">
                     {name.charAt(0).toUpperCase()}
                   </span>
                   <span className="min-w-0">
@@ -238,6 +263,24 @@ export function Sidebar() {
             })
           ))}
       </nav>
+
+      {storage && (
+        <div className="px-3 pb-3 pt-1 border-t border-white/5 shrink-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted mb-1">Your media storage</p>
+          <p className="text-sm font-semibold text-white tabular-nums">
+            {formatGb(storage.storage_used_bytes)} / {formatGb(storage.storage_quota_bytes)}
+          </p>
+          <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full bg-spotify/80 rounded-full transition-[width]" style={{ width: `${usedPct}%` }} />
+          </div>
+          {storage.media_disk_total_bytes && storage.media_disk_total_bytes > 0 ? (
+            <p className="text-[10px] text-muted mt-1.5 tabular-nums">
+              Media volume {formatGb(storage.media_disk_used_bytes || 0)} /{" "}
+              {formatGb(storage.media_disk_total_bytes)} used
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       <PlaylistEditModal

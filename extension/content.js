@@ -169,7 +169,8 @@ async function submitDownload(backdrop, url) {
     title,
     artist,
     format,
-    add_to_liked: dest === "liked",
+    // Always add to All Songs; optional playlist is an extra membership.
+    add_to_liked: true,
     playlist_id: dest === "liked" ? null : Number(dest),
   };
   status.textContent = "Queuing…";

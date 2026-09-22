@@ -64,6 +64,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
     db.commit()
     db.refresh(job)
 
+    # Always land in All Songs; optional playlist_id adds a second membership.
     task = download_youtube_track.delay(
         user_id=user.id,
         url=body.url,
@@ -71,7 +72,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
         artist=body.artist,
         audio_format=fmt,
         playlist_id=body.playlist_id,
-        add_to_liked=body.add_to_liked,
+        add_to_liked=True,
         job_id=job.id,
         added_via=body.added_via or "extension",
     )

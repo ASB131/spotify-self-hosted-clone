@@ -165,15 +165,33 @@ def me(user: User = Depends(get_current_user)) -> User:
 
 @router.get("/me/stats", response_model=UserStats)
 def my_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserStats:
+    import shutil
+    from pathlib import Path
+
     tracks_count = db.scalar(select(func.count()).select_from(UserTrack).where(UserTrack.user_id == user.id)) or 0
     from app.models.playlist import Playlist
 
     playlists_count = db.scalar(select(func.count()).select_from(Playlist).where(Playlist.user_id == user.id)) or 0
+
+    disk_total = disk_used = disk_free = 0
+    root = Path(settings.music_root)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        usage = shutil.disk_usage(root)
+        disk_total = usage.total
+        disk_free = usage.free
+        disk_used = usage.total - usage.free
+    except OSError:
+        pass
+
     return UserStats(
         tracks_count=tracks_count,
         playlists_count=playlists_count,
         storage_used_bytes=user.storage_used_bytes,
         storage_quota_bytes=user.storage_quota_bytes,
+        media_disk_total_bytes=disk_total,
+        media_disk_used_bytes=disk_used,
+        media_disk_free_bytes=disk_free,
     )
 
 

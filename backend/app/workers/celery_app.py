@@ -1,7 +1,6 @@
 """Celery application and beat schedule."""
 
 from celery import Celery
-from celery.schedules import crontab
 
 from app.config import get_settings
 
@@ -24,13 +23,5 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-celery_app.conf.beat_schedule = {
-    "spotify-sync-hourly": {
-        "task": "app.workers.tasks.sync_all_spotify_libraries",
-        "schedule": crontab(minute=15),
-    },
-    "discovery-weekly-monday": {
-        "task": "app.workers.tasks.refresh_all_discovery",
-        "schedule": crontab(hour=3, minute=0, day_of_week=1),
-    },
-}
+# No periodic Spotify sync or discovery refresh — library is YouTube-extension only.
+celery_app.conf.beat_schedule = {}

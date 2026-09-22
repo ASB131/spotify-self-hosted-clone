@@ -39,7 +39,8 @@ def get_or_link_track(
         db.add(ut)
         adjust_user_storage(db, user_id, track.file_size_bytes)
 
-    if add_to_liked:
+    # All Songs is the full library; categorized playlists are additional memberships.
+    if add_to_liked or playlist_id:
         liked = db.scalar(
             select(Playlist).where(Playlist.user_id == user_id, Playlist.is_liked_songs.is_(True))
         )
@@ -48,7 +49,7 @@ def get_or_link_track(
 
     if playlist_id:
         pl = db.get(Playlist, playlist_id)
-        if pl and pl.user_id == user_id:
+        if pl and pl.user_id == user_id and not pl.is_liked_songs:
             _add_to_playlist(db, playlist_id, track.id)
 
     db.flush()

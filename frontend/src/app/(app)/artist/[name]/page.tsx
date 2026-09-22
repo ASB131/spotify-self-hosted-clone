@@ -84,7 +84,7 @@ export default function ArtistPage() {
           <h2 className="text-xl font-bold mb-3">Songs</h2>
           <TrackTable tracks={data.tracks} emptyMessage="No songs for this artist." />
           <h2 className="text-xl font-bold mt-10 mb-3">Appears in playlists</h2>
-          <PlaylistGrid playlists={data.playlists} emptyMessage="Not in any playlists yet." />
+          <PlaylistGrid playlists={data.playlists} emptyMessage="Not in any playlists yet." compact />
         </>
       )}
     </>

@@ -53,6 +53,9 @@ class UserStats(BaseModel):
     playlists_count: int
     storage_used_bytes: int
     storage_quota_bytes: int
+    media_disk_total_bytes: int = 0
+    media_disk_used_bytes: int = 0
+    media_disk_free_bytes: int = 0
 
 
 class TrackPublic(BaseModel):

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { api, downloadBlob, getOAuthApiUrl, type Track } from "@/lib/api";
+import { api, downloadBlob, type Track } from "@/lib/api";
 import { TrackEditModal } from "@/components/TrackEditModal";
 import { WebSocketBridge } from "@/lib/ws";
 import { refreshAmpersandKeeps } from "@/lib/artists";
@@ -13,11 +13,6 @@ type Stats = {
   playlists_count: number;
   storage_used_bytes: number;
   storage_quota_bytes: number;
-};
-
-type Checklist = {
-  spotify_server_configured: boolean;
-  spotify_account_linked: boolean;
 };
 
 type AmpKeep = {
@@ -42,7 +37,6 @@ function formatBytes(n: number) {
 export default function ProfileContent() {
   const searchParams = useSearchParams();
   const [stats, setStats] = useState<Stats | null>(null);
-  const [checklist, setChecklist] = useState<Checklist | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [editing, setEditing] = useState<Track | null>(null);
   const [extMsg, setExtMsg] = useState<string | null>(null);
@@ -61,15 +55,11 @@ export default function ProfileContent() {
 
   const load = () => {
     api<Stats>("/api/v1/auth/me/stats").then(setStats);
-    api<Checklist>("/api/v1/setup/checklist").then(setChecklist);
     api<Track[]>("/api/v1/tracks").then(setTracks).catch(() => setTracks([]));
     loadAmp();
   };
 
   useEffect(() => {
-    if (searchParams.get("spotify") === "connected") {
-      setBanner("Spotify account linked. Liked songs sync runs hourly.");
-    }
     load();
   }, [searchParams]);
 
@@ -327,31 +317,6 @@ export default function ProfileContent() {
           </Link>
         </div>
         {extMsg && <p className="text-sm text-spotify">{extMsg}</p>}
-      </section>
-
-      <section className="max-w-lg space-y-3 bg-panel p-4 rounded-lg">
-        <h3 className="font-semibold">Spotify sync</h3>
-        {!checklist?.spotify_server_configured ? (
-          <p className="text-sm text-muted">
-            Spotify API keys are not on the server yet. See{" "}
-            <Link href="/setup-guide" className="text-spotify underline">
-              Setup guide → Spotify
-            </Link>{" "}
-            for <code className="text-white">.env</code> steps (admin).
-          </p>
-        ) : checklist.spotify_account_linked ? (
-          <p className="text-sm text-spotify">Your Spotify account is linked.</p>
-        ) : (
-          <p className="text-sm text-muted">Link your Spotify account to sync liked songs.</p>
-        )}
-        {checklist?.spotify_server_configured && (
-          <a
-            href={`${getOAuthApiUrl()}/api/v1/spotify/connect`}
-            className="inline-block bg-spotify text-black px-4 py-2 rounded-full font-semibold text-sm"
-          >
-            Connect Spotify
-          </a>
-        )}
       </section>
 
       <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={load} />
