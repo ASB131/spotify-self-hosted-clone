@@ -132,6 +132,27 @@ def list_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_
     ]
 
 
+@router.delete("/jobs/{job_id}")
+def cancel_job(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Cancel/remove a single download job (queued, running, or finished)."""
+    job = db.get(DownloadJob, job_id)
+    if not job or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.celery_task_id and job.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+        try:
+            from app.workers.celery_app import celery_app
+
+            celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")
+        except Exception:
+            pass
+
+    db.delete(job)
+    db.commit()
+    publish_user_event(user.id, "download_failed", {"job_id": job_id, "cancelled": True})
+    return {"removed": True, "job_id": job_id}
+
+
 @router.delete("/jobs")
 def clear_jobs(
     finished_only: bool = True,
@@ -145,6 +166,13 @@ def clear_jobs(
     for job in rows:
         if finished_only and job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
             continue
+        if job.status in (JobStatus.QUEUED, JobStatus.RUNNING) and job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")
+            except Exception:
+                pass
         db.delete(job)
         removed += 1
     db.commit()

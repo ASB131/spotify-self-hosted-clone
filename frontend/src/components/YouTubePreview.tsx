@@ -11,10 +11,7 @@ type Props = {
 declare global {
   interface Window {
     YT?: {
-      Player: new (
-        el: HTMLElement | string,
-        opts: Record<string, unknown>
-      ) => YtPlayer;
+      Player: new (el: HTMLElement | string, opts: Record<string, unknown>) => YtPlayer;
       PlayerState: { PLAYING: number; PAUSED: number; ENDED: number; BUFFERING: number };
     };
     onYouTubeIframeAPIReady?: () => void;
@@ -48,6 +45,13 @@ function loadYtApi(): Promise<void> {
       s.src = "https://www.youtube.com/iframe_api";
       document.head.appendChild(s);
     }
+    // API already mid-load
+    const poll = setInterval(() => {
+      if (window.YT?.Player) {
+        clearInterval(poll);
+        resolve();
+      }
+    }, 50);
   });
   return apiLoading;
 }
@@ -59,7 +63,10 @@ function fmt(sec: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** YouTube embed with native chrome hidden; only play/pause + scrub shown. */
+/**
+ * YouTube preview with native chrome fully covered.
+ * IFrame never receives pointer events — only our play/pause + scrub bar.
+ */
 export function YouTubePreview({ videoId, title, onClose }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YtPlayer | null>(null);
@@ -72,15 +79,16 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
   useEffect(() => {
     let cancelled = false;
     let tick: ReturnType<typeof setInterval> | undefined;
-    const host = hostRef.current;
-    if (!host) return;
 
     void loadYtApi().then(() => {
       if (cancelled || !hostRef.current || !window.YT) return;
       hostRef.current.innerHTML = "";
-      const el = document.createElement("div");
-      hostRef.current.appendChild(el);
-      const player = new window.YT.Player(el, {
+      const mount = document.createElement("div");
+      mount.style.width = "100%";
+      mount.style.height = "100%";
+      hostRef.current.appendChild(mount);
+
+      const player = new window.YT.Player(mount, {
         videoId,
         width: "100%",
         height: "100%",
@@ -93,14 +101,22 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
           modestbranding: 1,
           playsinline: 1,
           rel: 0,
-          showinfo: 0,
+          cc_load_policy: 0,
+          // Hide related / end screen noise
+          enablejsapi: 1,
+          origin: typeof window !== "undefined" ? window.location.origin : undefined,
         },
         events: {
-          onReady: () => {
+          onReady: (e: { target: YtPlayer }) => {
             if (cancelled) return;
-            playerRef.current = player;
+            playerRef.current = e.target;
             setReady(true);
-            setDuration(player.getDuration() || 0);
+            try {
+              setDuration(e.target.getDuration() || 0);
+              e.target.playVideo();
+            } catch {
+              /* ignore */
+            }
             setPlaying(true);
             tick = setInterval(() => {
               if (!playerRef.current || scrubbing.current) return;
@@ -108,7 +124,9 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
                 setProgress(playerRef.current.getCurrentTime() || 0);
                 setDuration(playerRef.current.getDuration() || 0);
                 const st = playerRef.current.getPlayerState();
-                setPlaying(st === window.YT!.PlayerState.PLAYING || st === window.YT!.PlayerState.BUFFERING);
+                setPlaying(
+                  st === window.YT!.PlayerState.PLAYING || st === window.YT!.PlayerState.BUFFERING
+                );
               } catch {
                 /* ignore */
               }
@@ -116,10 +134,13 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
           },
           onStateChange: (e: { data: number }) => {
             if (!window.YT) return;
-            setPlaying(e.data === window.YT.PlayerState.PLAYING || e.data === window.YT.PlayerState.BUFFERING);
+            setPlaying(
+              e.data === window.YT.PlayerState.PLAYING || e.data === window.YT.PlayerState.BUFFERING
+            );
           },
         },
       });
+      playerRef.current = player;
     });
 
     return () => {
@@ -136,22 +157,62 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
 
   function toggle() {
     const p = playerRef.current;
-    if (!p) return;
-    if (playing) p.pauseVideo();
-    else p.playVideo();
+    if (!p || !ready) return;
+    try {
+      if (playing) p.pauseVideo();
+      else p.playVideo();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function seekCommit(value: number) {
+    scrubbing.current = false;
+    try {
+      playerRef.current?.seekTo(value, true);
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
     <div className="px-2 pb-3">
-      <div className="relative aspect-video max-w-xl rounded-md overflow-hidden bg-black border border-white/10 group">
-        <div ref={hostRef} className="absolute inset-0 pointer-events-none [&>iframe]:!w-full [&>iframe]:!h-full" />
-        {/* Block YouTube hover chrome; our controls sit above */}
-        <div className="absolute inset-0 z-[1]" aria-hidden />
-        <div className="absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pt-8 pb-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          <div className="flex items-center gap-3">
+      <div className="relative aspect-video max-w-xl rounded-md overflow-hidden bg-black border border-white/10 select-none">
+        {/* Player — never receives mouse (avoids YouTube hover chrome) */}
+        <div
+          ref={hostRef}
+          className="absolute inset-0 [&_iframe]:!pointer-events-none [&_iframe]:!w-full [&_iframe]:!h-full"
+          style={{ pointerEvents: "none" }}
+        />
+
+        {/* Full click-catcher so iframe never sees hover/click */}
+        <button
+          type="button"
+          className="absolute inset-0 z-[1] cursor-pointer bg-transparent"
+          aria-label={playing ? "Pause" : "Play"}
+          onClick={toggle}
+        />
+
+        {/* Cover YouTube top title / share / watch-later chrome */}
+        <div
+          className="absolute inset-x-0 top-0 z-[2] h-16 bg-gradient-to-b from-black via-black/90 to-transparent pointer-events-none"
+          aria-hidden
+        />
+        {/* Cover YouTube bottom watermark / leftover chrome */}
+        <div
+          className="absolute inset-x-0 bottom-0 z-[2] h-20 bg-gradient-to-t from-black via-black/85 to-transparent pointer-events-none"
+          aria-hidden
+        />
+
+        {/* Our controls only */}
+        <div className="absolute inset-x-0 bottom-0 z-[3] px-3 pb-2.5 pt-6 pointer-events-none">
+          <div className="flex items-center gap-3 pointer-events-auto">
             <button
               type="button"
-              onClick={toggle}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
               disabled={!ready}
               className="shrink-0 h-9 w-9 rounded-full bg-white text-black flex items-center justify-center disabled:opacity-40"
               aria-label={playing ? "Pause" : "Play"}
@@ -171,30 +232,40 @@ export function YouTubePreview({ videoId, title, onClose }: Props) {
               type="range"
               min={0}
               max={Math.max(1, duration)}
-              step={0.1}
+              step={0.25}
               value={Math.min(progress, duration || 0)}
               disabled={!ready || !duration}
-              onMouseDown={() => {
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
                 scrubbing.current = true;
               }}
-              onTouchStart={() => {
+              onTouchStart={(e) => {
+                e.stopPropagation();
                 scrubbing.current = true;
               }}
               onChange={(e) => setProgress(Number(e.target.value))}
               onMouseUp={(e) => {
-                scrubbing.current = false;
-                playerRef.current?.seekTo(Number((e.target as HTMLInputElement).value), true);
+                e.stopPropagation();
+                seekCommit(Number((e.target as HTMLInputElement).value));
               }}
               onTouchEnd={(e) => {
-                scrubbing.current = false;
-                playerRef.current?.seekTo(Number((e.target as HTMLInputElement).value), true);
+                e.stopPropagation();
+                seekCommit(Number((e.target as HTMLInputElement).value));
               }}
-              className="flex-1 accent-white h-1 cursor-pointer"
+              className="flex-1 accent-white h-1.5 cursor-pointer"
               aria-label={`Seek ${title}`}
             />
             <span className="text-[11px] tabular-nums text-white/80 w-10 shrink-0 text-right">{fmt(duration)}</span>
             {onClose && (
-              <button type="button" onClick={onClose} className="text-xs text-white/70 hover:text-white shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="text-xs text-white/70 hover:text-white shrink-0 px-1"
+              >
                 Close
               </button>
             )}

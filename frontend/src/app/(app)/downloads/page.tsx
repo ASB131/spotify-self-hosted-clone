@@ -115,6 +115,15 @@ export default function DownloadsPage() {
     }
   }
 
+  async function cancelJob(id: number) {
+    try {
+      await api(`/api/v1/downloads/jobs/${id}`, { method: "DELETE" });
+      setJobs((prev) => prev.filter((j) => j.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Cancel failed");
+    }
+  }
+
   return (
     <div className="max-w-2xl pb-8">
       <div className="flex items-center justify-between gap-4 mb-4">
@@ -124,11 +133,26 @@ export default function DownloadsPage() {
             {live ? "Live updates on" : "Updating every few seconds"} · YouTube & extension
           </p>
         </div>
-        {finished.length > 0 && (
-          <button type="button" onClick={clearFinished} className="text-xs text-muted hover:text-white">
-            Clear finished
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {active.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                void Promise.all(active.map((j) => api(`/api/v1/downloads/jobs/${j.id}`, { method: "DELETE" }))).then(
+                  load
+                );
+              }}
+              className="text-xs text-red-400/90 hover:text-red-300"
+            >
+              Cancel active
+            </button>
+          )}
+          {finished.length > 0 && (
+            <button type="button" onClick={clearFinished} className="text-xs text-muted hover:text-white">
+              Clear finished
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
@@ -162,12 +186,22 @@ export default function DownloadsPage() {
                 </div>
                 <div className="flex items-center justify-between gap-2 mt-0.5">
                   <span className={`text-xs ${statusColor(j.status)}`}>{j.status}</span>
-                  {activeJob && (
-                    <span className="text-[11px] text-muted tabular-nums">
-                      {j.progress}%
-                      {eta ? ` · ${eta}` : ""}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {activeJob && (
+                      <span className="text-[11px] text-muted tabular-nums">
+                        {j.progress}%
+                        {eta ? ` · ${eta}` : ""}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void cancelJob(j.id)}
+                      className="text-[11px] text-muted hover:text-red-400"
+                      title={activeJob ? "Cancel" : "Remove"}
+                    >
+                      {activeJob ? "Cancel" : "Remove"}
+                    </button>
+                  </div>
                 </div>
                 {activeJob && (
                   <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
