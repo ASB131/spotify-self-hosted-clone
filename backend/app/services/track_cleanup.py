@@ -31,14 +31,38 @@ def _delete_file(path: Path) -> None:
         logger.warning("Failed to delete file %s: %s", path, exc)
 
 
+def prune_empty_parents(path: Path, stop_at: Path) -> None:
+    """Remove empty directories from path's parent up to (but not including) stop_at."""
+    try:
+        stop = stop_at.resolve()
+        cur = path.parent.resolve()
+    except OSError:
+        return
+    while cur != stop:
+        try:
+            if not cur.is_relative_to(stop):
+                break
+        except (AttributeError, TypeError, ValueError):
+            break
+        try:
+            cur.rmdir()
+        except OSError:
+            break
+        cur = cur.parent
+
+
 def delete_track_files(track: Track) -> int:
     """Delete audio and art from disk; returns bytes freed."""
+    from app.services.storage_paths import music_root
+
     freed = 0
+    root = music_root()
     try:
         audio = track_file_path(track.relative_path)
         if audio.is_file():
             freed += audio.stat().st_size
             _delete_file(audio)
+            prune_empty_parents(audio, root)
     except ValueError:
         pass
     if track.art_relative_path:
@@ -47,6 +71,7 @@ def delete_track_files(track: Track) -> int:
             if art.is_file():
                 freed += art.stat().st_size
                 _delete_file(art)
+                prune_empty_parents(art, root)
         except ValueError:
             pass
     return freed

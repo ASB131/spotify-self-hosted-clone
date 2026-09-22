@@ -698,6 +698,7 @@ def redownload_track_format(user_id: int, track_id: int, target_format: str, job
 
         old_size = track.file_size_bytes
         old_rel = track.relative_path
+        old_art_rel = track.art_relative_path
 
         import time as _time
 
@@ -757,12 +758,29 @@ def redownload_track_format(user_id: int, track_id: int, target_format: str, job
         adjust_user_storage(db, user_id, size - old_size)
         db.commit()
 
+        # Drop previous audio/art when paths changed (e.g. MP3→FLAC upgrade).
+        from app.services.storage_paths import art_file_path as _art_path
+        from app.services.storage_paths import music_root as _music_root
+        from app.services.track_cleanup import prune_empty_parents
+
+        root = _music_root()
         try:
             old_path = track_file_path(old_rel)
-            if old_path.is_file() and str(old_path) != str(track_file_path(relative)):
+            new_path = track_file_path(relative)
+            if old_path.is_file() and old_path.resolve() != new_path.resolve():
                 old_path.unlink()
+                prune_empty_parents(old_path, root)
         except (ValueError, OSError) as exc:
-            logger.warning("Could not remove old file: %s", exc)
+            logger.warning("Could not remove old audio file: %s", exc)
+        if old_art_rel:
+            try:
+                old_art = _art_path(old_art_rel)
+                new_art = _art_path(art_rel) if art_rel else None
+                if old_art.is_file() and (new_art is None or old_art.resolve() != new_art.resolve()):
+                    old_art.unlink()
+                    prune_empty_parents(old_art, root)
+            except (ValueError, OSError) as exc:
+                logger.warning("Could not remove old art file: %s", exc)
 
         if job_id:
             update_job(
