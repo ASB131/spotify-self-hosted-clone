@@ -25,7 +25,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
         raise HTTPException(status_code=403, detail="Storage quota exceeded")
 
     fmt = body.format.lower()
-    if fmt not ("mp3", "flac"):
+    if fmt not in ("mp3", "flac"):
         raise HTTPException(status_code=400, detail="format must be mp3 or flac")
 
     task = download_youtube_track.delay(
