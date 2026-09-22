@@ -1,3 +1,23 @@
+export type Track = {
+  id: number;
+  title: string;
+  artist: string;
+  album?: string | null;
+  duration_seconds?: number | null;
+  format: string;
+  file_size_bytes: number;
+  art_url?: string | null;
+  added_at?: string | null;
+};
+
+export type Playlist = {
+  id: number;
+  name: string;
+  description?: string | null;
+  is_liked_songs: boolean;
+  track_count: number;
+};
+
 export function getApiUrl(): string {
   const env = process.env.NEXT_PUBLIC_API_URL;
   if (env && env.trim().length > 0) {
@@ -20,17 +40,6 @@ export function getOAuthApiUrl(): string {
 export const API_URL = typeof window !== "undefined" ? getApiUrl() : process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-
-export type Track = {
-  id: number;
-  title: string;
-  artist: string;
-  album?: string | null;
-  duration_seconds?: number | null;
-  format: string;
-  file_size_bytes: number;
-  art_url?: string | null;
-};
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers: HeadersInit = {

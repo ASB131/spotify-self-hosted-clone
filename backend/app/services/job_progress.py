@@ -55,4 +55,8 @@ def update_job(
             "url": job.url,
         },
     )
+    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+        from app.services.job_prune import prune_finished_jobs
+
+        prune_finished_jobs(db, job.user_id)
     return job

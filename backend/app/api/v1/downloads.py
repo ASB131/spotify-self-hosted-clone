@@ -11,6 +11,7 @@ from app.models.playlist import Playlist
 from app.models.user import User
 from app.schemas.auth import DownloadRequest
 from app.services.events import publish_user_event
+from app.services.job_prune import prune_finished_jobs
 from app.workers.tasks import download_youtube_track
 from pydantic import BaseModel
 from typing import Optional
@@ -96,6 +97,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
 
 @router.get("/jobs", response_model=list[DownloadJobPublic])
 def list_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    prune_finished_jobs(db, user.id)
     rows = db.scalars(
         select(DownloadJob).where(DownloadJob.user_id == user.id).order_by(DownloadJob.created_at.desc()).limit(50)
     ).all()

@@ -1,7 +1,9 @@
 """Track library, streaming, search, delete, quality upgrade."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -18,7 +20,7 @@ from app.workers.tasks import upgrade_track_quality
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
 
-def _track_public(track: Track) -> TrackPublic:
+def _track_public(track: Track, added_at: datetime | None = None) -> TrackPublic:
     art_url = f"/api/v1/tracks/{track.id}/art" if track.art_relative_path else None
     return TrackPublic(
         id=track.id,
@@ -29,18 +31,19 @@ def _track_public(track: Track) -> TrackPublic:
         format=track.format.value,
         file_size_bytes=track.file_size_bytes,
         art_url=art_url,
+        added_at=added_at,
     )
 
 
 @router.get("", response_model=list[TrackPublic])
 def list_tracks(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TrackPublic]:
-    rows = db.scalars(
-        select(Track)
+    rows = db.execute(
+        select(Track, UserTrack.added_at)
         .join(UserTrack, UserTrack.track_id == Track.id)
         .where(UserTrack.user_id == user.id)
         .order_by(UserTrack.added_at.desc())
     ).all()
-    return [_track_public(t) for t in rows]
+    return [_track_public(track, added_at) for track, added_at in rows]
 
 
 @router.get("/search", response_model=SearchResults)

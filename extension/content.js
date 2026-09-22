@@ -152,7 +152,7 @@ async function submitDownload(backdrop, url) {
             : res.data?.detail || `HTTP ${res.status}`;
       throw new Error(msg || "Failed");
     }
-    status.textContent = `Queued — open Downloads in the web app to watch progress (job ${res.data.job_id || res.data.task_id})`;
+    status.textContent = "Queued — open Downloads in the web app to watch progress";
     status.style.color = "#1db954";
     if (cfg.webBase) {
       const link = document.createElement("a");

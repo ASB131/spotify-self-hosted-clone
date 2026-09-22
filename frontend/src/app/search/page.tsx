@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { TrackTable } from "@/components/TrackTable";
 import { api, type Track } from "@/lib/api";
-import { usePlayerStore } from "@/store/player";
 
-type SearchResults = { tracks: Track[]; playlists: { id: number; name: string }[] };
+type SearchResults = {
+  tracks: Track[];
+  playlists: { id: number; name: string; is_liked_songs?: boolean; track_count?: number }[];
+};
 
 export default function SearchPage() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
-  const setTrack = usePlayerStore((s) => s.setTrack);
 
   async function search() {
     if (q.length < 2) return;
@@ -36,21 +39,21 @@ export default function SearchPage() {
       {results && (
         <>
           <h3 className="font-semibold mb-2">Tracks</h3>
-          <ul className="mb-4 space-y-1">
-            {results.tracks.map((t) => (
-              <li key={t.id}>
-                <button type="button" className="text-left hover:text-spotify" onClick={() => setTrack(t)}>
-                  {t.title} — {t.artist}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <h3 className="font-semibold mb-2">Playlists</h3>
-          <ul className="space-y-1">
-            {results.playlists.map((p) => (
-              <li key={p.id}>{p.name}</li>
-            ))}
-          </ul>
+          <TrackTable tracks={results.tracks} emptyMessage="No matching tracks." />
+          <h3 className="font-semibold mt-8 mb-3">Playlists</h3>
+          {results.playlists.length === 0 ? (
+            <p className="text-sm text-muted">No matching playlists.</p>
+          ) : (
+            <ul className="space-y-1">
+              {results.playlists.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/playlist/${p.id}`} className="text-left hover:text-spotify hover:underline">
+                    {p.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </AppShell>

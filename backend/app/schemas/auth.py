@@ -64,6 +64,7 @@ class TrackPublic(BaseModel):
     format: str
     file_size_bytes: int
     art_url: Optional[str] = None
+    added_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
