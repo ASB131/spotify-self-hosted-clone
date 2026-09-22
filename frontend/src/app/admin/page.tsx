@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AdminIntegrations } from "@/components/AdminIntegrations";
 import { AppShell } from "@/components/AppShell";
 import { api } from "@/lib/api";
 
@@ -57,6 +58,7 @@ export default function AdminPage() {
   return (
     <AppShell>
       <h2 className="text-2xl font-bold mb-4">Admin</h2>
+      <AdminIntegrations />
       <section className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Invite codes</h3>
@@ -71,17 +73,6 @@ export default function AdminPage() {
             </li>
           ))}
         </ul>
-      </section>
-      <section className="mb-8">
-        <h3 className="font-semibold mb-2">Server configuration</h3>
-        <p className="text-sm text-muted mb-2">
-          Spotify keys, YouTube cookies, and CORS are configured in the host <code className="text-white">.env</code>.
-          See the in-app{" "}
-          <a href="/setup-guide" className="text-spotify underline">
-            Setup guide
-          </a>{" "}
-          for status badges and steps.
-        </p>
       </section>
       <section>
         <h3 className="font-semibold mb-2">Storage by user</h3>

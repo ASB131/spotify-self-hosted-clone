@@ -1,4 +1,4 @@
-"""Spotify token refresh for background workers."""
+"""Spotify token refresh using DB-stored app credentials."""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -6,11 +6,10 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.models.user import User
+from app.services.integrations import spotify_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 def ensure_spotify_access_token(db: Session, user: User) -> str | None:
@@ -20,14 +19,19 @@ def ensure_spotify_access_token(db: Session, user: User) -> str | None:
     if user.spotify_access_token and user.spotify_token_expires_at and user.spotify_token_expires_at > now + timedelta(minutes=2):
         return user.spotify_access_token
 
+    sp = spotify_settings(db)
+    if not sp.configured:
+        logger.error("Spotify app credentials missing in Admin → Integrations")
+        return None
+
     with httpx.Client(timeout=30) as client:
         resp = client.post(
             "https://accounts.spotify.com/api/token",
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": user.spotify_refresh_token,
-                "client_id": settings.spotify_client_id,
-                "client_secret": settings.spotify_client_secret,
+                "client_id": sp.client_id,
+                "client_secret": sp.client_secret,
             },
         )
     if resp.status_code != 200:

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { API_URL, api } from "@/lib/api";
+import { api, downloadBlob, getOAuthApiUrl } from "@/lib/api";
 
 type Stats = {
   tracks_count: number;
@@ -42,16 +42,7 @@ export default function ProfileContent() {
   async function installChromeExtension() {
     setExtMsg(null);
     try {
-      const token = sessionStorage.getItem("access_token");
-      const res = await fetch(`${API_URL}/api/v1/extension/download`, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || "Download failed");
-      }
-      const blob = await res.blob();
+      const blob = await downloadBlob("/api/v1/extension/download");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -119,7 +110,7 @@ export default function ProfileContent() {
         )}
         {checklist?.spotify_server_configured && (
           <a
-            href={`${API_URL}/api/v1/spotify/connect`}
+            href={`${getOAuthApiUrl()}/api/v1/spotify/connect`}
             className="inline-block bg-spotify text-black px-4 py-2 rounded-full font-semibold text-sm"
           >
             Connect Spotify

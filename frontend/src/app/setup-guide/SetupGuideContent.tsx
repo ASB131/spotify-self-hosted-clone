@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { API_URL, api } from "@/lib/api";
+import { api, getApiUrl, getOAuthApiUrl } from "@/lib/api";
 
 type ServerSetup = {
   needs_setup: boolean;
@@ -38,7 +38,7 @@ export default function SetupGuideContent() {
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    fetch(`${API_URL}/api/v1/setup/server`)
+    fetch(`${getApiUrl()}/api/v1/setup/server`)
       .then((r) => r.json())
       .then(setServer)
       .catch(() => setMsg("Could not load server status. Is the API running?"));
@@ -57,7 +57,7 @@ export default function SetupGuideContent() {
   }, [load, searchParams]);
 
   async function copyApiUrl() {
-    await navigator.clipboard.writeText(API_URL);
+    await navigator.clipboard.writeText(getApiUrl());
     setMsg("API URL copied.");
   }
 
@@ -113,7 +113,7 @@ export default function SetupGuideContent() {
           <li>{checklist?.extension_cors_hint}</li>
         </ol>
         <button type="button" onClick={copyApiUrl} className="text-sm bg-white/10 px-3 py-1.5 rounded-full">
-          Copy API URL ({API_URL})
+          Copy API URL ({getApiUrl()})
         </button>
       </section>
 
@@ -122,29 +122,13 @@ export default function SetupGuideContent() {
         {!server?.spotify_server_configured ? (
           <>
             <p className="text-sm text-muted">
-              An admin must add Spotify credentials to <code className="text-white">.env</code> on the server:
+              An admin should open <Link href="/admin" className="text-spotify underline">Admin → Integrations</Link> and
+              paste Spotify Client ID, Client secret, and redirect URI (no .env editing required).
             </p>
-            <ul className="text-sm text-muted list-disc list-inside">
-              <li>
-                <code className="text-white">SPOTIFY_CLIENT_ID</code> /{" "}
-                <code className="text-white">SPOTIFY_CLIENT_SECRET</code> from{" "}
-                <a className="text-spotify underline" href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">
-                  Spotify Developer Dashboard
-                </a>
-              </li>
-              <li>
-                Redirect URI in Spotify app:{" "}
-                <code className="text-white">{server?.spotify_redirect_uri ?? "http://localhost:8000/api/v1/spotify/callback"}</code>
-              </li>
-              <li>
-                <code className="text-white">PUBLIC_WEB_URL</code> = your web UI (e.g. http://localhost:3000)
-              </li>
-            </ul>
-            {adminHints && (
-              <pre className="text-xs bg-black/40 p-3 rounded overflow-x-auto max-h-48 overflow-y-auto">
-                {JSON.stringify(adminHints, null, 2)}
-              </pre>
-            )}
+            <p className="text-xs text-muted">
+              In Spotify Dashboard use redirect URI:{" "}
+              <code className="text-white">{server?.spotify_redirect_uri}</code>
+            </p>
           </>
         ) : (
           <>
@@ -159,7 +143,7 @@ export default function SetupGuideContent() {
               </p>
             )}
             <a
-              href={`${API_URL}/api/v1/spotify/connect`}
+              href={`${getOAuthApiUrl()}/api/v1/spotify/connect`}
               className="inline-block bg-spotify text-black px-4 py-2 rounded-full font-semibold text-sm"
             >
               Connect my Spotify account

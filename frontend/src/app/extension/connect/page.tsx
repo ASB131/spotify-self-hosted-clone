@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { API_URL, api } from "@/lib/api";
+import { api, getApiUrl } from "@/lib/api";
 
 export default function ExtensionConnectPage() {
   const router = useRouter();
@@ -31,8 +31,8 @@ export default function ExtensionConnectPage() {
 
       <label className="block text-sm text-muted mb-1">API base URL</label>
       <div className="flex gap-2 mb-4">
-        <input readOnly value={API_URL} className="flex-1 bg-panel rounded px-3 py-2 text-sm" />
-        <button type="button" onClick={() => copy(API_URL, "API URL")} className="bg-spotify text-black px-3 rounded-full text-sm font-semibold">
+        <input readOnly value={getApiUrl()} className="flex-1 bg-panel rounded px-3 py-2 text-sm" />
+        <button type="button" onClick={() => copy(getApiUrl(), "API URL")} className="bg-spotify text-black px-3 rounded-full text-sm font-semibold">
           Copy
         </button>
       </div>

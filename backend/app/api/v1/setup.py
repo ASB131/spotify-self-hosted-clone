@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
 from app.schemas.setup import ServerSetupPublic, UserSetupChecklist
+from app.services.integrations import lidarr_settings, spotify_settings
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 settings = get_settings()
@@ -26,27 +27,25 @@ def _cookies_ready() -> bool:
         return False
 
 
-def _spotify_server_ok() -> bool:
-    return bool(settings.spotify_client_id.strip() and settings.spotify_client_secret.strip())
-
-
 @router.get("/server", response_model=ServerSetupPublic)
 def server_setup_public(db: Session = Depends(get_db)) -> ServerSetupPublic:
     count = db.scalar(select(func.count()).select_from(User)) or 0
+    sp = spotify_settings(db)
     return ServerSetupPublic(
         needs_setup=count == 0,
-        spotify_server_configured=_spotify_server_ok(),
+        spotify_server_configured=sp.configured,
         youtube_cookies_ready=_cookies_ready(),
-        spotify_redirect_uri=settings.spotify_redirect_uri,
-        public_web_url=settings.public_web_url,
+        spotify_redirect_uri=sp.redirect_uri,
+        public_web_url=sp.public_web_url,
     )
 
 
 @router.get("/checklist", response_model=UserSetupChecklist)
-def user_setup_checklist(user: User = Depends(get_current_user)) -> UserSetupChecklist:
+def user_setup_checklist(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserSetupChecklist:
+    sp = spotify_settings(db)
     return UserSetupChecklist(
-        spotify_server_configured=_spotify_server_ok(),
+        spotify_server_configured=sp.configured,
         spotify_account_linked=bool(user.spotify_refresh_token),
-        spotify_redirect_uri=settings.spotify_redirect_uri,
-        extension_cors_hint="Add chrome-extension://YOUR_EXTENSION_ID to CORS_ORIGINS in the server .env, then restart the API.",
+        spotify_redirect_uri=sp.redirect_uri,
+        extension_cors_hint="Add chrome-extension://YOUR_EXTENSION_ID to CORS_ORIGINS in Admin → Integrations (or .env), then restart API.",
     )
