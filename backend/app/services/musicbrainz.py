@@ -192,40 +192,36 @@ def search_recordings_by_tag(tag: str, limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
-def recordings_for_artist(artist_mbid: str, limit: int = 40) -> list[dict[str, Any]]:
-    """Fast artist discography sample via one MusicBrainz search (arid)."""
-    data = _get("/recording", {"query": f"arid:{artist_mbid}", "limit": str(limit)})
-    if not data:
-        return []
+def recordings_for_artist(artist_mbid: str, limit: int = 50) -> list[dict[str, Any]]:
+    """
+    Latest recordings for an artist by release-group date (not relevance score).
+    Walks newest release groups first so recent singles/albums appear before old hits.
+    """
+    rgs = artist_release_groups(artist_mbid, limit=50)
+    rgs = sorted(
+        [rg for rg in rgs if rg.get("id")],
+        key=lambda rg: rg.get("first-release-date") or "",
+        reverse=True,
+    )
     out: list[dict[str, Any]] = []
-    for rec in data.get("recordings") or []:
-        credit = rec.get("artist-credit") or []
-        artist = " ".join(
-            (c.get("name") or "") + (c.get("joinphrase") or "") for c in credit
-        ).strip() or "Unknown Artist"
-        releases = rec.get("releases") or []
-        # Prefer release with a date for "latest first"
-        releases_sorted = sorted(
-            releases,
-            key=lambda r: r.get("date") or "0000",
-            reverse=True,
-        )
-        album = releases_sorted[0].get("title") if releases_sorted else None
-        release_mbid = releases_sorted[0].get("id") if releases_sorted else None
-        date = releases_sorted[0].get("date") if releases_sorted else None
-        out.append(
-            {
-                "title": rec.get("title") or "Unknown",
-                "artist": artist,
-                "album": album,
-                "recording_mbid": rec.get("id"),
-                "release_mbid": release_mbid,
-                "duration_ms": rec.get("length"),
-                "date": date,
-                "score": rec.get("score"),
-            }
-        )
-    out.sort(key=lambda t: t.get("date") or "", reverse=True)
+    seen: set[str] = set()
+    # Newest ~12 groups keep API calls bounded (~1s throttle each)
+    for rg in rgs[:8]:
+        rg_date = rg.get("first-release-date") or ""
+        rel_mbid = release_group_first_release_mbid(rg["id"])
+        if not rel_mbid:
+            continue
+        for t in release_tracklist(rel_mbid):
+            key = t.get("recording_mbid") or f"{t.get('title')}|{t.get('album')}"
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            row = dict(t)
+            row["date"] = rg_date or row.get("date")
+            row["score"] = None
+            out.append(row)
+            if len(out) >= limit:
+                return out
     return out
 
 

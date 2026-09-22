@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { api, getApiUrl, type Track } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 
@@ -37,8 +37,6 @@ type CatalogRecording = {
 type CatalogSearch = {
   artists: CatalogArtist[];
   recordings: CatalogRecording[];
-  listenbrainz_ok: boolean;
-  musicbrainz_ok: boolean;
 };
 
 type Tab = "all" | "playlists" | "songs" | "artists";
@@ -47,6 +45,28 @@ function artSrc(url?: string | null) {
   if (!url) return null;
   if (url.startsWith("http")) return url;
   return `${getApiUrl()}${url}`;
+}
+
+function LetterAvatar({
+  label,
+  round,
+  size = "md",
+}: {
+  label: string;
+  round?: boolean;
+  size?: "md" | "lg";
+}) {
+  const letter = (label || "?").trim().charAt(0).toUpperCase() || "?";
+  const box = size === "lg" ? "w-28 h-28 text-5xl" : "w-12 h-12 text-lg";
+  return (
+    <div
+      className={`shrink-0 overflow-hidden bg-[#282828] flex items-center justify-center font-bold text-white/50 ${box} ${
+        round ? "rounded-full" : "rounded"
+      }`}
+    >
+      {letter}
+    </div>
+  );
 }
 
 function ArtThumb({
@@ -58,64 +78,72 @@ function ArtThumb({
   round?: boolean;
   label?: string;
 }) {
+  // Prefer library/local art only — skip broken external CAA for list rows when missing
   const src = artSrc(url);
+  if (!src || src.includes("coverartarchive.org")) {
+    return <LetterAvatar label={label || ""} round={round} />;
+  }
   return (
     <div
       className={`shrink-0 w-12 h-12 overflow-hidden bg-[#282828] ${
         round ? "rounded-full" : "rounded"
       }`}
     >
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-muted text-xs">
-          {label?.slice(0, 1)?.toUpperCase() || "♪"}
-        </div>
-      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        className="w-full h-full object-cover"
+        onError={(e) => {
+          (e.target as HTMLImageElement).style.display = "none";
+        }}
+      />
     </div>
   );
 }
 
 function SearchInner() {
   const params = useSearchParams();
-  const router = useRouter();
   const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
-  const [q, setQ] = useState(params.get("q") || "");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [catalog, setCatalog] = useState<CatalogSearch | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [loading, setLoading] = useState(false);
-
-  async function runSearch(term: string) {
-    if (term.length < 2) return;
-    setMsg(null);
-    setLoading(true);
-    try {
-      const [lib, cat] = await Promise.all([
-        api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(term)}`),
-        api<CatalogSearch>(`/api/v1/catalog/search?q=${encodeURIComponent(term)}`).catch(() => null),
-      ]);
-      setResults(lib);
-      setCatalog(cat);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const q = (params.get("q") || "").trim();
 
   useEffect(() => {
-    const term = params.get("q") || "";
-    setQ(term);
-    if (term.length >= 2) void runSearch(term);
-  }, [params]);
+    if (q.length < 2) {
+      setResults(null);
+      setCatalog(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setMsg(null);
+    Promise.all([
+      api<SearchResults>(`/api/v1/tracks/search?q=${encodeURIComponent(q)}`),
+      api<CatalogSearch>(`/api/v1/catalog/search?q=${encodeURIComponent(q)}`).catch(() => null),
+    ])
+      .then(([lib, cat]) => {
+        if (cancelled) return;
+        setResults(lib);
+        setCatalog(cat);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [q]);
 
   async function downloadRecording(r: CatalogRecording) {
     setBusyId(r.recording_mbid);
     setMsg(null);
     try {
-      const res = await api<{ via: string; job_id: number }>("/api/v1/catalog/download", {
+      const res = await api<{ via: string }>("/api/v1/catalog/download", {
         method: "POST",
         body: JSON.stringify({
           title: r.title,
@@ -133,44 +161,21 @@ function SearchInner() {
     }
   }
 
-  function submit() {
-    const term = q.trim();
-    if (term.length < 2) return;
-    router.push(`/search?q=${encodeURIComponent(term)}`);
-    void runSearch(term);
-  }
-
   const topArtist = catalog?.artists?.[0];
-  const libraryIds = useMemo(() => new Set((results?.tracks || []).map((t) => t.id)), [results]);
-
   const chips: { id: Tab; label: string }[] = [
     { id: "all", label: "All" },
     { id: "songs", label: "Songs" },
     { id: "artists", label: "Artists" },
     { id: "playlists", label: "Playlists" },
   ];
-
   const show = (section: Tab) => tab === "all" || tab === section;
+
+  if (q.length < 2) {
+    return <p className="text-sm text-muted">Search from the bar above.</p>;
+  }
 
   return (
     <div className="pb-8">
-      <div className="flex gap-2 mb-4">
-        <input
-          className="flex-1 bg-[#242424] rounded-full px-4 py-2.5 outline-none focus:ring-2 focus:ring-white text-sm"
-          placeholder="What do you want to listen to?"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        <button
-          type="button"
-          onClick={submit}
-          className="bg-white text-black px-5 rounded-full font-semibold text-sm"
-        >
-          Search
-        </button>
-      </div>
-
       {(results || catalog) && (
         <div className="flex flex-wrap gap-2 mb-6">
           {chips.map((c) => (
@@ -191,12 +196,9 @@ function SearchInner() {
       {loading && <p className="text-sm text-muted mb-4">Searching…</p>}
       {msg && <p className="text-sm text-spotify mb-4">{msg}</p>}
 
-      {/* Top artist hero */}
       {show("artists") && topArtist && (
         <section className="mb-8 flex items-center gap-5 rounded-lg bg-gradient-to-r from-[#3a3a3a] to-[#181818] p-5">
-          <div className="w-28 h-28 rounded-full overflow-hidden bg-[#282828] shrink-0 shadow-lg flex items-center justify-center text-4xl font-bold text-white/40">
-            {topArtist.name.slice(0, 1)}
-          </div>
+          <LetterAvatar label={topArtist.name} round size="lg" />
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted mb-1">Artist</p>
             <Link
@@ -253,13 +255,13 @@ function SearchInner() {
         <section className="mb-8">
           <h3 className="text-xl font-bold mb-3">Artists</h3>
           <ul className="space-y-1">
-            {catalog.artists.slice(tab === "artists" ? 0 : 1).map((a) => (
+            {catalog.artists.slice(1).map((a) => (
               <li key={a.mbid}>
                 <Link
                   href={`/catalog/artist/${a.mbid}`}
                   className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10"
                 >
-                  <ArtThumb round label={a.name} />
+                  <LetterAvatar label={a.name} round />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">{a.name}</p>
                     <p className="text-xs text-muted">
@@ -283,7 +285,7 @@ function SearchInner() {
               <li key={`lib-${t.id}`}>
                 <button
                   type="button"
-                      onClick={() => playTrackInContext(t, results!.tracks)}
+                  onClick={() => playTrackInContext(t, results!.tracks)}
                   className="w-full flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10 text-left"
                 >
                   <ArtThumb url={t.art_url} label={t.title} />
@@ -292,10 +294,7 @@ function SearchInner() {
                     <p className="text-xs text-muted truncate">Song · {t.artist}</p>
                   </div>
                   <span className="text-xs text-muted mr-2">Song</span>
-                  <span
-                    className="w-6 h-6 rounded-full bg-spotify text-black flex items-center justify-center text-xs font-bold"
-                    title="In library"
-                  >
+                  <span className="w-6 h-6 rounded-full bg-spotify text-black flex items-center justify-center text-xs font-bold">
                     ✓
                   </span>
                 </button>
@@ -304,7 +303,7 @@ function SearchInner() {
             {(catalog?.recordings || []).map((r) => (
               <li key={r.recording_mbid}>
                 <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/10">
-                  <ArtThumb url={r.art_url} label={r.title} />
+                  <LetterAvatar label={r.title} />
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/catalog/recording/${r.recording_mbid}`}
@@ -324,27 +323,18 @@ function SearchInner() {
                     onClick={() => downloadRecording(r)}
                     className="shrink-0 w-8 h-8 rounded-full border border-white/30 text-white/80 hover:border-white hover:text-white flex items-center justify-center text-lg leading-none disabled:opacity-40"
                     title="Download"
-                    aria-label={`Download ${r.title}`}
                   >
                     {busyId === r.recording_mbid ? "…" : "+"}
                   </button>
                 </div>
               </li>
             ))}
-            {!loading &&
-              !(results?.tracks?.length || catalog?.recordings?.length) &&
-              (results || catalog) && (
-                <p className="text-sm text-muted px-2">No songs found.</p>
-              )}
+            {!loading && !(results?.tracks?.length || catalog?.recordings?.length) && (
+              <p className="text-sm text-muted px-2">No songs found.</p>
+            )}
           </ul>
         </section>
       )}
-
-      {!loading && !results && !catalog && q.length >= 2 && (
-        <p className="text-sm text-muted">No results.</p>
-      )}
-      {/* silence unused */}
-      <span className="hidden">{libraryIds.size}</span>
     </div>
   );
 }

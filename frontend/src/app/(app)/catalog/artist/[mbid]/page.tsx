@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api, getApiUrl, type Track } from "@/lib/api";
@@ -11,7 +11,6 @@ type ArtistPage = {
   name: string;
   disambiguation?: string | null;
   tags: string[];
-  releases: { id: string; title: string; first_release_date?: string; art_url?: string }[];
 };
 
 type CatalogTrack = {
@@ -20,10 +19,8 @@ type CatalogTrack = {
   album?: string;
   recording_mbid?: string;
   release_mbid?: string;
-  art_url?: string;
   date?: string;
   duration_ms?: number;
-  in_library?: boolean;
 };
 
 type LibraryTrack = {
@@ -33,7 +30,6 @@ type LibraryTrack = {
   album?: string | null;
   duration_seconds?: number | null;
   art_url?: string | null;
-  in_library?: boolean;
 };
 
 type ArtistTracks = {
@@ -76,13 +72,6 @@ export default function CatalogArtistPage() {
       .catch(() => setTracks(null))
       .finally(() => setLoadingTracks(false));
   }, [mbid]);
-
-  const heroArt = useMemo(() => {
-    const fromRelease = page?.releases?.find((r) => r.art_url)?.art_url;
-    const fromLib = tracks?.library?.find((t) => t.art_url)?.art_url;
-    const fromCat = tracks?.tracks?.find((t) => t.art_url)?.art_url;
-    return artSrc(fromRelease || fromLib || fromCat || null);
-  }, [page, tracks]);
 
   async function download(t: CatalogTrack) {
     const id = t.recording_mbid || t.title;
@@ -129,29 +118,17 @@ export default function CatalogArtistPage() {
 
   const library = tracks?.library || [];
   const catalog = tracks?.tracks || [];
+  const initial = page.name.trim().charAt(0).toUpperCase() || "?";
 
   return (
     <div className="pb-10 -mt-2">
-      {/* Hero */}
-      <div
-        className="relative rounded-lg overflow-hidden mb-6 px-6 pt-16 pb-8"
-        style={{
-          background: heroArt
-            ? `linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(18,18,18,0.92) 100%), url(${heroArt}) center/cover`
-            : "linear-gradient(180deg, #535353 0%, #181818 70%)",
-        }}
-      >
+      <div className="relative rounded-lg overflow-hidden mb-6 px-6 pt-16 pb-8 bg-gradient-to-b from-[#535353] to-[#121212]">
         <Link href="/search" className="absolute top-4 left-6 text-sm text-white/70 hover:text-white">
           ← Search
         </Link>
         <div className="flex items-end gap-6">
-          <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden shadow-2xl bg-black/40 shrink-0 flex items-center justify-center text-5xl font-bold text-white/30">
-            {heroArt ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={heroArt} alt="" className="w-full h-full object-cover" />
-            ) : (
-              page.name.slice(0, 1)
-            )}
+          <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden shadow-2xl bg-[#282828] shrink-0 flex items-center justify-center text-6xl font-black text-white/35">
+            {initial}
           </div>
           <div className="min-w-0 pb-1">
             <p className="text-xs font-semibold mb-2">Artist</p>
@@ -177,7 +154,6 @@ export default function CatalogArtistPage() {
         {msg && <p className="text-sm text-spotify">{msg}</p>}
       </div>
 
-      {/* In library */}
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-4">In your library</h2>
         {loadingTracks ? (
@@ -192,11 +168,13 @@ export default function CatalogArtistPage() {
                 className="grid grid-cols-[2rem_1fr_auto_auto] sm:grid-cols-[2rem_3rem_1fr_auto_4rem] gap-3 items-center px-2 py-2 rounded-md hover:bg-white/10 group"
               >
                 <span className="text-muted text-sm text-right">{i + 1}</span>
-                <div className="hidden sm:block w-10 h-10 rounded overflow-hidden bg-[#282828]">
+                <div className="hidden sm:flex w-10 h-10 rounded overflow-hidden bg-[#282828] items-center justify-center text-sm font-bold text-white/40">
                   {artSrc(t.art_url) ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={artSrc(t.art_url)!} alt="" className="w-full h-full object-cover" />
-                  ) : null}
+                  ) : (
+                    t.title.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <button
                   type="button"
@@ -216,7 +194,7 @@ export default function CatalogArtistPage() {
                     setQueue(asTracks, Math.max(0, idx));
                   }}
                 >
-                  <p className="font-medium truncate group-hover:text-white">{t.title}</p>
+                  <p className="font-medium truncate">{t.title}</p>
                   <p className="text-xs text-muted truncate sm:hidden">{t.album || t.artist}</p>
                 </button>
                 <span className="w-6 h-6 rounded-full bg-spotify text-black flex items-center justify-center text-xs font-bold">
@@ -231,10 +209,9 @@ export default function CatalogArtistPage() {
         )}
       </section>
 
-      {/* Download more */}
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-1">More to download</h2>
-        <p className="text-sm text-muted mb-4">Latest catalog recordings first.</p>
+        <p className="text-sm text-muted mb-4">Newest MusicBrainz releases first (Spotify-only drops may not appear yet).</p>
         {loadingTracks ? (
           <p className="text-sm text-muted">Loading catalog…</p>
         ) : catalog.length === 0 ? (
@@ -247,11 +224,8 @@ export default function CatalogArtistPage() {
                 className="grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_3rem_1fr_auto_auto] gap-3 items-center px-2 py-2 rounded-md hover:bg-white/10"
               >
                 <span className="text-muted text-sm text-right">{i + 1}</span>
-                <div className="hidden sm:block w-10 h-10 rounded overflow-hidden bg-[#282828]">
-                  {artSrc(t.art_url) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={artSrc(t.art_url)!} alt="" className="w-full h-full object-cover" />
-                  ) : null}
+                <div className="hidden sm:flex w-10 h-10 rounded overflow-hidden bg-[#282828] items-center justify-center text-sm font-bold text-white/40">
+                  {(t.title || "?").charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <p className="font-medium truncate">{t.title}</p>

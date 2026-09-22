@@ -300,21 +300,30 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
                 album_name=item.album or item.title,
             )
             if album:
-                _notify(
-                    user_id,
-                    "download_progress",
-                    {
-                        "stage": "Waiting for Lidarr import (torrent)…",
-                        "discovery_item_id": item_id,
-                    },
-                )
-                tf = client.wait_for_track_file(
-                    title=item.title,
-                    artist=item.artist,
-                    album=album,
-                    timeout_sec=720,
-                    poll_sec=20,
-                )
+                search_queued = bool(album.get("_search_queued", True))
+                if search_queued:
+                    _notify(
+                        user_id,
+                        "download_progress",
+                        {
+                            "stage": "Waiting for Lidarr import (torrent)…",
+                            "discovery_item_id": item_id,
+                        },
+                    )
+                    tf = client.wait_for_track_file(
+                        title=item.title,
+                        artist=item.artist,
+                        album=album,
+                        timeout_sec=240,
+                        poll_sec=15,
+                    )
+                else:
+                    tf = client.find_matching_track_file(
+                        title=item.title,
+                        artist=item.artist,
+                        album_id=album.get("id"),
+                        artist_id=album.get("artistId"),
+                    )
                 if tf and tf.get("path"):
                     rel = client.path_to_relative(tf["path"])
                     if rel:
@@ -349,11 +358,12 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
                     db.commit()
                     return {"status": "failed", "error": "path mapping"}
             # Lidarr configured but could not fulfill — fail clearly (no YouTube mix)
-            _fail_discovery_item(
-                db,
-                item_id,
-                "Lidarr could not find/import this release. Check indexers, qBittorrent, and root folder /music.",
+            reason = (
+                "Lidarr indexers found no torrent for this release (nothing sent to qBittorrent)."
+                if album and not album.get("_search_queued", True)
+                else "Lidarr could not find/import this release. Check indexers, qBittorrent, and root folder /music."
             )
+            _fail_discovery_item(db, item_id, reason)
             db.commit()
             return {"status": "failed", "via": "lidarr"}
 
@@ -444,12 +454,25 @@ def acquire_catalog_recording(
                 album_name=album or title,
             )
             if album_info:
-                if job_id:
-                    update_job(db, job_id, progress=40, stage="Waiting for torrent import…")
-                # Don't block forever — fall through to YouTube if torrent never lands
-                tf = client.wait_for_track_file(
-                    title=title, artist=artist, album=album_info, timeout_sec=180, poll_sec=15
-                )
+                search_queued = bool(album_info.get("_search_queued", True))
+                if search_queued:
+                    if job_id:
+                        update_job(db, job_id, progress=40, stage="Waiting for torrent import…")
+                    tf = client.wait_for_track_file(
+                        title=title, artist=artist, album=album_info, timeout_sec=240, poll_sec=15
+                    )
+                else:
+                    # Indexers returned nothing — don't spin for minutes
+                    if job_id:
+                        update_job(db, job_id, progress=45, stage="Lidarr: no torrent found")
+                    tf = client.find_matching_track_file(
+                        title=title,
+                        artist=artist,
+                        album_id=album_info.get("id"),
+                        artist_id=album_info.get("artistId"),
+                    )
+                    if tf and not tf.get("path"):
+                        tf = None
                 if tf and tf.get("path"):
                     rel = client.path_to_relative(tf["path"])
                     if rel:

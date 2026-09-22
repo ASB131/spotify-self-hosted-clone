@@ -78,11 +78,9 @@ def _writable_cookiefile() -> Optional[str]:
         return None
 
 
-def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
+def _ydl_opts(audio_format: str, outtmpl: str, *, use_cookies: bool = True) -> dict:
     """
-    Use yt-dlp defaults for player clients + Deno for YouTube EJS challenges.
-    Forcing android/ios/tv/web breaks downloads when cookies skip mobile clients
-    and SABR-only streaming removes formats.
+    Use yt-dlp defaults + Deno for YouTube EJS. Prefer formats that survive SABR.
     """
     codec = "flac" if audio_format == "flac" else "mp3"
     opts: dict = {
@@ -95,7 +93,8 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
         "ignoreerrors": False,
         "writethumbnail": True,
         "embedthumbnail": False,
-        "format": "bestaudio/best",
+        # Include HLS audio (233/234) when progressive streams are missing
+        "format": "bestaudio/best/233/234/bestaudio*/best*",
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -103,15 +102,17 @@ def _ydl_opts(audio_format: str, outtmpl: str) -> dict:
                 "preferredquality": "0",
             }
         ],
-        # Deno is enabled by default in yt-dlp; be explicit so workers always use it.
         "js_runtimes": {"deno": {}},
     }
-    cookiefile = _writable_cookiefile()
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
-        logger.info("Using YouTube cookies from uploaded/mounted file")
+    if use_cookies:
+        cookiefile = _writable_cookiefile()
+        if cookiefile:
+            opts["cookiefile"] = cookiefile
+            logger.info("Using YouTube cookies from uploaded/mounted file")
+        else:
+            logger.info("No cookies configured — using yt-dlp default clients")
     else:
-        logger.info("No cookies configured — using yt-dlp default clients")
+        logger.info("Retrying yt-dlp without cookies")
 
     return opts
 
@@ -128,28 +129,49 @@ def download_youtube_audio(
     """
     tmp = Path(tempfile.mkdtemp(prefix="ytdlp_"))
     outtmpl = str(tmp / "%(id)s.%(ext)s")
-    opts = _ydl_opts(audio_format, outtmpl)
 
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-    except Exception as first_exc:
-        # Second attempt: absolute loosest format string
-        logger.warning("Primary yt-dlp attempt failed (%s); retrying with format=best", first_exc)
-        opts["format"] = "best"
+    attempts: list[dict] = [
+        _ydl_opts(audio_format, outtmpl, use_cookies=True),
+        {**_ydl_opts(audio_format, outtmpl, use_cookies=False), "format": "bestaudio/best/233/234"},
+        {**_ydl_opts(audio_format, outtmpl, use_cookies=False), "format": "best"},
+        {
+            **_ydl_opts(audio_format, outtmpl, use_cookies=False),
+            "format": "bestaudio/best",
+            "extractor_args": {"youtube": {"player_client": ["tv", "web_safari", "mweb", "web"]}},
+        },
+    ]
+
+    last_exc: Exception | None = None
+    info = None
+    for i, opts in enumerate(attempts):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
+            if info:
+                break
         except Exception as exc:
-            shutil.rmtree(tmp, ignore_errors=True)
-            logger.exception("yt-dlp failed for %s", url)
-            raise RuntimeError(f"Download failed: {exc}") from exc
+            last_exc = exc
+            logger.warning("yt-dlp attempt %s failed (%s)", i + 1, exc)
+            for p in tmp.glob("*"):
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+
+    if not info:
+        shutil.rmtree(tmp, ignore_errors=True)
+        logger.exception("yt-dlp failed for %s", url)
+        raise RuntimeError(f"Download failed: {last_exc}") from last_exc
 
     video_id = info.get("id") or extract_youtube_id(url)
     ext = "flac" if audio_format == "flac" else "mp3"
     candidates = list(tmp.glob(f"*.{ext}"))
     if not candidates:
-        candidates = list(tmp.glob("*.*"))
+        candidates = [
+            p
+            for p in tmp.glob("*.*")
+            if p.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp", ".vtt", ".json", ".ytdl")
+        ]
     if not candidates:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError("No audio file produced")
@@ -168,7 +190,6 @@ def download_youtube_audio(
         "duration": info.get("duration") or info.get("duration_string"),
         "webpage_url": info.get("webpage_url") or url,
     }
-    # Prefer accurate duration from the downloaded file
     try:
         if audio_format == "flac":
             audio = FLAC(audio_path)
@@ -183,7 +204,6 @@ def download_youtube_audio(
     if isinstance(meta.get("duration"), float):
         meta["duration"] = int(meta["duration"])
 
-    # Normalize multi-artist credits ( & / X / feat → comma list when appropriate)
     try:
         from app.services.artist_normalize import normalize_for_library
 

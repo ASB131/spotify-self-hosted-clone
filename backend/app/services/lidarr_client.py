@@ -158,12 +158,45 @@ class LidarrClient:
         return None
 
     def trigger_album_search(self, album_ids: list[int]) -> bool:
+        """
+        Run AlbumSearch and wait briefly for the command to finish.
+        Returns True if Lidarr likely queued a download (reports > 0 or queue non-empty).
+        """
         try:
-            self._post("/api/v1/command", {"name": "AlbumSearch", "albumIds": album_ids})
-            return True
+            cmd = self._post("/api/v1/command", {"name": "AlbumSearch", "albumIds": album_ids}) or {}
         except Exception:
             logger.exception("Lidarr AlbumSearch failed")
             return False
+        cmd_id = cmd.get("id")
+        message = ""
+        if cmd_id:
+            for _ in range(45):
+                try:
+                    st = self._get(f"/api/v1/command/{cmd_id}") or {}
+                except Exception:
+                    break
+                status = (st.get("status") or "").lower()
+                message = st.get("message") or ""
+                if status in ("completed", "failed"):
+                    break
+                time.sleep(1)
+        # Any active queue item for these albums?
+        try:
+            q = self._get("/api/v1/queue") or {}
+            records = q.get("records") if isinstance(q, dict) else q
+            for r in records or []:
+                if r.get("albumId") in album_ids or r.get("album", {}).get("id") in album_ids:
+                    return True
+        except Exception:
+            pass
+        msg_l = message.lower()
+        if "0 reports" in msg_l or "no results" in msg_l:
+            logger.info("Lidarr AlbumSearch found nothing: %s", message)
+            return False
+        if "reports downloaded" in msg_l:
+            return True
+        # Unknown message — allow a short import wait
+        return True
 
     def ensure_album(
         self,
@@ -172,7 +205,22 @@ class LidarrClient:
         artist_name: str,
         album_name: str | None,
     ) -> dict[str, Any] | None:
-        """Look up and add album to Lidarr, then trigger search. Returns album info or None."""
+        """
+        Look up / add album in Lidarr and trigger search.
+        Returns album dict with extra key `_search_queued` (bool) when search was run.
+        """
+        album = self._ensure_album_inner(
+            release_mbid=release_mbid, artist_name=artist_name, album_name=album_name
+        )
+        return album
+
+    def _ensure_album_inner(
+        self,
+        *,
+        release_mbid: str | None,
+        artist_name: str,
+        album_name: str | None,
+    ) -> dict[str, Any] | None:
         if not self.configured:
             return None
         roots = self.root_folders()
@@ -198,7 +246,9 @@ class LidarrClient:
         album = results[0]
         # Already in library
         if album.get("id"):
-            self.trigger_album_search([int(album["id"])])
+            queued = self.trigger_album_search([int(album["id"])])
+            album = dict(album)
+            album["_search_queued"] = queued
             return album
 
         artist_stub = album.get("artist") or {}
@@ -235,7 +285,9 @@ class LidarrClient:
         foreign_album_id = album.get("foreignAlbumId")
         existing = self.find_album_by_foreign_id(foreign_album_id, artist_id=artist_id)
         if existing and existing.get("id"):
-            self.trigger_album_search([int(existing["id"])])
+            queued = self.trigger_album_search([int(existing["id"])])
+            existing = dict(existing)
+            existing["_search_queued"] = queued
             return existing
 
         album_payload = {
@@ -258,14 +310,19 @@ class LidarrClient:
         except Exception:
             existing = self.find_album_by_foreign_id(foreign_album_id, artist_id=artist_id)
             if existing and existing.get("id"):
-                self.trigger_album_search([int(existing["id"])])
+                queued = self.trigger_album_search([int(existing["id"])])
+                existing = dict(existing)
+                existing["_search_queued"] = queued
                 return existing
             logger.exception("Lidarr add album failed")
             return None
 
         aid = added.get("id")
+        added = dict(added)
         if aid:
-            self.trigger_album_search([int(aid)])
+            added["_search_queued"] = self.trigger_album_search([int(aid)])
+        else:
+            added["_search_queued"] = False
         return added
 
     def list_track_files(self, *, artist_id: int | None = None, album_id: int | None = None) -> list[dict]:
