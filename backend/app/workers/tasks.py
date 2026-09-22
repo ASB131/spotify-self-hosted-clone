@@ -166,6 +166,12 @@ def download_youtube_track(
         )
         meta, audio_path, thumb = download_youtube_audio(url, audio_format, title, artist)
         tmp_dir = audio_path.parent
+        try:
+            from app.services.artist_normalize import normalize_for_library
+
+            meta["artist"] = normalize_for_library(meta.get("artist") or artist, db, user_id)
+        except Exception:
+            logger.exception("artist normalize failed")
         update_job(
             db,
             job_id,
@@ -252,9 +258,20 @@ def download_youtube_track(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-@celery_app.task(name="app.workers.tasks.acquire_discovery_item", bind=True, max_retries=1)
+@celery_app.task(
+    name="app.workers.tasks.acquire_discovery_item",
+    bind=True,
+    max_retries=1,
+    soft_time_limit=900,
+    time_limit=960,
+)
 def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool = True):
-    """Try Lidarr grab; fall back to YouTube ytsearch."""
+    """
+    Prefer Lidarr (torrent) when configured and healthy — no YouTube mix results.
+    Fall back to a stricter YouTube search only when Lidarr is unavailable.
+    """
+    from app.services.lidarr_import import import_lidarr_track
+
     db = SessionLocal()
     try:
         item = db.get(DiscoveryItem, item_id)
@@ -263,36 +280,86 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
         if item.status == DiscoveryItemStatus.READY and item.track_id:
             return {"status": "ready", "track_id": item.track_id}
 
-        lidarr_ok = False
-        if prefer_lidarr:
-            lid = lidarr_settings(db)
-            client = LidarrClient(lid)
-            if client.health():
-                item.acquire_via = "lidarr"
-                item.status = DiscoveryItemStatus.DOWNLOADING
-                db.add(item)
-                db.commit()
-                album = client.ensure_album(
-                    release_mbid=item.release_mbid,
-                    artist_name=item.artist,
-                    album_name=item.album or item.title,
-                )
-                if album:
-                    lidarr_ok = True
-                    # Lidarr grabs are async in the download client; fall through to YouTube
-                    # for immediate library playback while Lidarr works in parallel.
-                    _notify(
-                        user_id,
-                        "download_progress",
-                        {
-                            "stage": "Queued in Lidarr — also fetching via YouTube for playback",
-                            "discovery_item_id": item_id,
-                        },
-                    )
+        lid = lidarr_settings(db)
+        client = LidarrClient(lid)
+        lidarr_ready = prefer_lidarr and client.health()
 
-        # Always ensure Resonance has a playable file via YouTube (Lidarr import can replace later)
-        url = f"ytsearch1:{item.artist} - {item.title}"
-        item.acquire_via = "lidarr+youtube" if lidarr_ok else "youtube"
+        if lidarr_ready:
+            item.acquire_via = "lidarr"
+            item.status = DiscoveryItemStatus.DOWNLOADING
+            db.add(item)
+            db.commit()
+            _notify(
+                user_id,
+                "download_progress",
+                {"stage": "Searching Lidarr / torrent indexers…", "discovery_item_id": item_id},
+            )
+            album = client.ensure_album(
+                release_mbid=item.release_mbid,
+                artist_name=item.artist,
+                album_name=item.album or item.title,
+            )
+            if album:
+                _notify(
+                    user_id,
+                    "download_progress",
+                    {
+                        "stage": "Waiting for Lidarr import (torrent)…",
+                        "discovery_item_id": item_id,
+                    },
+                )
+                tf = client.wait_for_track_file(
+                    title=item.title,
+                    artist=item.artist,
+                    album=album,
+                    timeout_sec=720,
+                    poll_sec=20,
+                )
+                if tf and tf.get("path"):
+                    rel = client.path_to_relative(tf["path"])
+                    if rel:
+                        track = import_lidarr_track(
+                            db,
+                            user_id,
+                            relative_path=rel,
+                            title=item.title,
+                            artist=item.artist,
+                            album=item.album,
+                            lidarr_file_id=tf.get("id"),
+                            recording_mbid=item.recording_mbid,
+                            added_via="lidarr",
+                        )
+                        _link_discovery_item(db, item_id, track.id, via="lidarr")
+                        db.commit()
+                        _notify(
+                            user_id,
+                            "download_complete",
+                            {"track_id": track.id, "discovery_item_id": item_id, "via": "lidarr"},
+                        )
+                        return {"status": "ready", "track_id": track.id, "via": "lidarr"}
+                    logger.warning(
+                        "Lidarr file not under /music shared volume: %s", tf.get("path")
+                    )
+                    _fail_discovery_item(
+                        db,
+                        item_id,
+                        "Lidarr downloaded a file but it is not under the shared /music folder. "
+                        "Set Lidarr root folder to /music.",
+                    )
+                    db.commit()
+                    return {"status": "failed", "error": "path mapping"}
+            # Lidarr configured but could not fulfill — fail clearly (no YouTube mix)
+            _fail_discovery_item(
+                db,
+                item_id,
+                "Lidarr could not find/import this release. Check indexers, qBittorrent, and root folder /music.",
+            )
+            db.commit()
+            return {"status": "failed", "via": "lidarr"}
+
+        # YouTube fallback only when Lidarr is not in play
+        url = _youtube_search_url(item.artist, item.title)
+        item.acquire_via = "youtube"
         db.add(item)
         db.commit()
         job = DownloadJob(
@@ -303,8 +370,9 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
             audio_format="flac",
             status=JobStatus.QUEUED,
             progress=0,
-            stage="Queued — YouTube" + (" (Lidarr also searching)" if lidarr_ok else ""),
+            stage="Queued — YouTube (Lidarr not configured)",
             discovery_item_id=item.id,
+            added_via="youtube",
         )
         db.add(job)
         db.commit()
@@ -323,7 +391,7 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
         job.celery_task_id = task.id
         db.add(job)
         db.commit()
-        return {"status": "queued", "job_id": job.id, "lidarr": lidarr_ok}
+        return {"status": "queued", "job_id": job.id, "lidarr": False}
     except Exception as exc:
         logger.exception("acquire_discovery_item failed")
         try:
@@ -331,6 +399,143 @@ def acquire_discovery_item(self, user_id: int, item_id: int, prefer_lidarr: bool
             db.commit()
         except Exception:
             db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _youtube_search_url(artist: str, title: str) -> str:
+    """Prefer official audio; exclude common mix/live traps."""
+    q = f'"{title}" "{artist}" official audio -mix -remix -mashup -live -bootleg -DJ'
+    return f"ytsearch1:{q}"
+
+
+@celery_app.task(
+    name="app.workers.tasks.acquire_catalog_recording",
+    bind=True,
+    soft_time_limit=900,
+    time_limit=960,
+)
+def acquire_catalog_recording(
+    self,
+    user_id: int,
+    title: str,
+    artist: str,
+    album: str | None = None,
+    recording_mbid: str | None = None,
+    release_mbid: str | None = None,
+    job_id: int | None = None,
+):
+    """Download a catalog (MusicBrainz) recording via Lidarr, else YouTube."""
+    from app.services.lidarr_import import import_lidarr_track
+
+    db = SessionLocal()
+    try:
+        if job_id:
+            update_job(db, job_id, status=JobStatus.RUNNING, progress=5, stage="Starting…")
+        lid = lidarr_settings(db)
+        client = LidarrClient(lid)
+        if client.health():
+            if job_id:
+                update_job(db, job_id, progress=15, stage="Lidarr album search…")
+            album_info = client.ensure_album(
+                release_mbid=release_mbid,
+                artist_name=artist,
+                album_name=album or title,
+            )
+            if album_info:
+                if job_id:
+                    update_job(db, job_id, progress=40, stage="Waiting for torrent import…")
+                tf = client.wait_for_track_file(
+                    title=title, artist=artist, album=album_info, timeout_sec=720, poll_sec=20
+                )
+                if tf and tf.get("path"):
+                    rel = client.path_to_relative(tf["path"])
+                    if rel:
+                        track = import_lidarr_track(
+                            db,
+                            user_id,
+                            relative_path=rel,
+                            title=title,
+                            artist=artist,
+                            album=album,
+                            lidarr_file_id=tf.get("id"),
+                            recording_mbid=recording_mbid,
+                            added_via="lidarr",
+                        )
+                        db.commit()
+                        if job_id:
+                            update_job(
+                                db,
+                                job_id,
+                                status=JobStatus.COMPLETED,
+                                progress=100,
+                                stage="Done (Lidarr)",
+                                track_id=track.id,
+                                title=track.title,
+                                artist=track.artist,
+                            )
+                        _notify(user_id, "download_complete", {"track_id": track.id, "via": "lidarr"})
+                        return {"status": "ready", "track_id": track.id, "via": "lidarr"}
+            if job_id:
+                update_job(
+                    db,
+                    job_id,
+                    status=JobStatus.FAILED,
+                    progress=100,
+                    stage="Lidarr failed",
+                    error="Lidarr could not import this recording",
+                )
+            return {"status": "failed", "via": "lidarr"}
+
+        url = _youtube_search_url(artist, title)
+        job = None
+        if job_id:
+            job = db.get(DownloadJob, job_id)
+        if not job:
+            job = DownloadJob(
+                user_id=user_id,
+                url=url,
+                title=title,
+                artist=artist,
+                audio_format="flac",
+                status=JobStatus.QUEUED,
+                progress=0,
+                stage="Queued — YouTube",
+                added_via="youtube",
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            job_id = job.id
+        else:
+            job.url = url
+            db.add(job)
+            db.commit()
+        task = download_youtube_track.delay(
+            user_id=user_id,
+            url=url,
+            title=title,
+            artist=artist,
+            audio_format="flac",
+            playlist_id=None,
+            add_to_liked=True,
+            job_id=job_id,
+            discovery_item_id=None,
+        )
+        job = db.get(DownloadJob, job_id)
+        if job:
+            job.celery_task_id = task.id
+            db.add(job)
+            db.commit()
+        return {"status": "queued", "job_id": job_id, "via": "youtube"}
+    except Exception as exc:
+        logger.exception("acquire_catalog_recording failed")
+        if job_id:
+            try:
+                update_job(db, job_id, status=JobStatus.FAILED, stage="Failed", error=str(exc))
+            except Exception:
+                pass
         raise
     finally:
         db.close()

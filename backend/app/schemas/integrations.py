@@ -28,7 +28,9 @@ class LidarrIntegrationPublic(BaseModel):
     has_api_key: bool
     configured: bool
     note: str = (
-        "Lidarr is optional. Resonance downloads via yt-dlp today; Lidarr settings are stored for upcoming *arr integration."
+        "Lidarr is a separate app (cannot be embedded). Optional: `docker compose --profile arr up -d`. "
+        "Point Lidarr at your existing qBittorrent (host.docker.internal or LAN IP), root folder /music, "
+        "torrent indexers, then paste Lidarr URL + API key here. Discovery uses Lidarr only when healthy."
     )
 
 

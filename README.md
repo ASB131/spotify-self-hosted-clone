@@ -29,25 +29,45 @@ rm -rf ./data/postgres
 docker compose up -d
 ```
 
-## Do I need Lidarr, Prowlarr, or other *arr apps?
+## Do I need Lidarr / qBittorrent?
 
-**No.** Resonance is self-contained for its current features:
+**Optional, but recommended for Discover Weekly / Release Radar / catalog downloads.**
 
-| Need | Built into Resonance |
-|------|----------------------|
-| Download audio from YouTube | Celery + **yt-dlp** worker |
-| Spotify liked-songs sync | **Spotipy** + YouTube search (optional OAuth) |
-| Library, playlists, streaming | Postgres + FastAPI + Next.js |
-| Art / metadata | yt-dlp + Mutagen in workers |
+Lidarr is a **separate .NET application** ([Lidarr/Lidarr](https://github.com/Lidarr/Lidarr)) — it cannot be compiled into Resonance. Resonance talks to it over HTTP (API key).
 
-**Lidarr**, **Prowlarr**, **Sonarr**, and **Radarr** are part of the *arr* ecosystem for automating **torrent/Usenet** downloads. This project does **not** integrate with them today. You only need those if you separately want to acquire files via indexers and then import them yourself—they are not required to run `docker compose up`.
+**qBittorrent is not packaged here.** Use the BitTorrent client you already run. Wire it in Lidarr → Settings → Download Clients.
 
-Optional companions (not wired in):
+Optional Lidarr container (same compose project):
 
-- **Navidrome** — separate music *server* (Subsonic API); Resonance replaces that role with its own UI and library.
-- **Lidarr + Prowlarr** — only if you want automated torrent/Usenet acquisition outside YouTube; would need custom integration to import into `/music`.
+```bash
+docker compose --profile arr up -d
+```
 
-To run another stack **alongside** Resonance, use different host ports in each project’s `.env` (e.g. Lidarr on `8686`) and separate Docker networks/volumes so they do not conflict with `POSTGRES_PORT`, `REDIS_PORT`, etc. here.
+Then:
+
+1. Open Lidarr (`http://<host>:8686`) → root folder **`/music`** (same volume as `MUSIC_VOLUME`)
+2. Download Clients → your existing **qBittorrent** (host IP or `host.docker.internal`, WebUI port, category `lidarr`)
+3. Add torrent indexers
+4. Admin → Integrations → Lidarr URL (`http://lidarr:8686` from other containers) + API key
+
+When Lidarr is healthy, discovery/catalog downloads use **Lidarr only** (no YouTube mixes). YouTube remains for the extension and when Lidarr is off.
+
+### Linux multi-drive layout (example)
+
+Clone compose into the SSD1 docker tree, point volumes at cache/media drives in `.env`:
+
+```bash
+# /ssd1_system/docker/spotify_clone/.env (excerpt)
+POSTGRES_DATA=/ssd2_cache/databases/spotify_clone_postgres
+REDIS_DATA=/ssd2_cache/caches/spotify_clone/redis
+APP_DATA=/ssd2_cache/caches/spotify_clone/app
+MUSIC_VOLUME=/ssd2_cache/spotify_clone_media
+LIDARR_CONFIG=/ssd2_cache/caches/spotify_clone/lidarr
+```
+
+Then `docker compose up -d --build` (or pull `IMAGE_TAG=main` images) and open the web UI — first visit runs **Admin setup**, then use **Setup guide** for Lidarr / cookies / Spotify.
+
+Catalog search uses **MusicBrainz**. **ListenBrainz** powers discovery recommendations (fresh releases / tags).
 
 ## Services
 

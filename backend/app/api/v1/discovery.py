@@ -288,11 +288,13 @@ def download_discovery_item(
         task = acquire_discovery_item.delay(user.id, item.id, prefer_lidarr=True)
         return {"status": "queued", "via": "lidarr", "task_id": task.id}
 
-    # YouTube fallback immediately
+    # YouTube fallback when Lidarr is not configured / unhealthy
     item.acquire_via = "youtube"
     db.add(item)
     db.commit()
-    url = f"ytsearch1:{item.artist} - {item.title}"
+    from app.workers.tasks import _youtube_search_url
+
+    url = _youtube_search_url(item.artist, item.title)
     job = DownloadJob(
         user_id=user.id,
         url=url,

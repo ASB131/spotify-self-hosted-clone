@@ -1,5 +1,6 @@
 """ORM models — import all for Alembic autogenerate."""
 
+from app.models.artist_keep import ArtistKeep
 from app.models.download_job import DownloadJob, JobStatus
 from app.models.discovery import (
     ArtistMbid,
@@ -30,6 +31,7 @@ __all__ = [
     "DownloadJob",
     "JobStatus",
     "ArtistMbid",
+    "ArtistKeep",
     "PlayEvent",
     "DiscoveryPlaylist",
     "DiscoveryItem",

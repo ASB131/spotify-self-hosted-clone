@@ -11,6 +11,11 @@ type ServerSetup = {
   youtube_cookies_ready: boolean;
   spotify_redirect_uri: string;
   public_web_url: string;
+  lidarr_configured?: boolean;
+  lidarr_reachable?: boolean;
+  lidarr_hint?: string | null;
+  listenbrainz_ok?: boolean;
+  musicbrainz_ok?: boolean;
 };
 
 type Checklist = {
@@ -18,11 +23,15 @@ type Checklist = {
   spotify_account_linked: boolean;
   spotify_redirect_uri: string;
   extension_cors_hint: string;
+  lidarr_ready?: boolean;
+  lidarr_hint?: string | null;
 };
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${ok ? "bg-spotify/20 text-spotify" : "bg-red-500/20 text-red-300"}`}>
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full ${ok ? "bg-spotify/20 text-spotify" : "bg-red-500/20 text-red-300"}`}
+    >
       {ok ? "OK" : "Needs setup"} — {label}
     </span>
   );
@@ -64,8 +73,8 @@ export default function SetupGuideContent() {
     <>
       <h1 className="text-2xl font-bold mb-2">Setup guide</h1>
       <p className="text-muted text-sm mb-6 max-w-2xl">
-        Step-by-step configuration for downloads, the Chrome extension, and Spotify library sync. Server-level options
-        are set in your <code className="text-white">.env</code> file (Docker host).
+        Step-by-step configuration for downloads, Lidarr torrents, the Chrome extension, and Spotify.
+        Server-level options live in <code className="text-white">.env</code> and Admin → Integrations.
       </p>
 
       {msg && <p className="text-sm text-spotify mb-4">{msg}</p>}
@@ -77,15 +86,76 @@ export default function SetupGuideContent() {
             <StatusBadge ok={!server.needs_setup} label="Admin account" />
             <StatusBadge ok={server.youtube_cookies_ready} label="YouTube cookies.txt" />
             <StatusBadge ok={server.spotify_server_configured} label="Spotify API keys" />
+            <StatusBadge ok={!!server.musicbrainz_ok} label="MusicBrainz" />
+            <StatusBadge ok={!!server.listenbrainz_ok} label="ListenBrainz" />
+            <StatusBadge ok={!!server.lidarr_reachable} label="Lidarr reachable" />
           </div>
+          {server.lidarr_hint && <p className="text-sm text-muted mt-2">{server.lidarr_hint}</p>}
         </section>
       )}
 
       <section className="mb-8 max-w-2xl space-y-3 bg-panel p-5 rounded-lg">
-        <h2 className="text-lg font-semibold">1. YouTube downloads (server)</h2>
+        <h2 className="text-lg font-semibold">1. Lidarr + your qBittorrent (recommended for Discovery)</h2>
         <p className="text-sm text-muted">
-          Export YouTube cookies from your browser (extension such as &quot;Get cookies.txt LOCALLY&quot;), save as{" "}
-          <code className="text-white">cookies.txt</code> next to docker-compose, and restart the worker/API containers.
+          YouTube search often grabs mixes. For Discover Weekly / Release Radar / catalog downloads, use{" "}
+          <strong className="text-white">Lidarr over BitTorrent</strong>. Lidarr is a separate app (
+          <a
+            href="https://github.com/Lidarr/Lidarr"
+            className="text-spotify underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Lidarr/Lidarr
+          </a>
+          ) — it cannot be built into Resonance.{" "}
+          <strong className="text-white">qBittorrent is not bundled</strong>; connect the client you already run.
+        </p>
+        <ol className="text-sm text-muted list-decimal list-inside space-y-2">
+          <li>
+            Optional: start Lidarr in this stack with{" "}
+            <code className="text-white">docker compose --profile arr up -d</code> (or use a Lidarr you already host).
+          </li>
+          <li>
+            Open Lidarr (default{" "}
+            <a href="http://localhost:8686" className="text-spotify underline" target="_blank" rel="noreferrer">
+              http://localhost:8686
+            </a>
+            ).
+          </li>
+          <li>
+            Media Management → root folder <code className="text-white">/music</code> (must be the same library volume
+            as Resonance <code className="text-white">MUSIC_VOLUME</code>).
+          </li>
+          <li>
+            Settings → Download Clients → add <strong className="text-white">qBittorrent</strong> pointing at your
+            existing instance: host <code className="text-white">host.docker.internal</code> (or your server LAN IP),
+            your WebUI port, username/password, category <code className="text-white">lidarr</code>. Use BitTorrent
+            only — skip Usenet unless you want it.
+          </li>
+          <li>If paths differ between Lidarr and qBittorrent, set a Remote Path Mapping in Lidarr.</li>
+          <li>Settings → Indexers: add torrent indexers (or connect Prowlarr).</li>
+          <li>
+            Copy Lidarr API key (Settings → General). In{" "}
+            <Link href="/admin" className="text-spotify underline">
+              Admin → Integrations
+            </Link>{" "}
+            set base URL to <code className="text-white">http://lidarr:8686</code> (when Lidarr is in this compose
+            network) and paste the key.
+          </li>
+        </ol>
+        {checklist?.lidarr_ready ? (
+          <p className="text-sm text-spotify">Lidarr looks ready (reachable + root folder + download client).</p>
+        ) : (
+          <p className="text-sm text-amber-200/90">{checklist?.lidarr_hint || "Lidarr not fully ready yet."}</p>
+        )}
+      </section>
+
+      <section className="mb-8 max-w-2xl space-y-3 bg-panel p-5 rounded-lg">
+        <h2 className="text-lg font-semibold">2. YouTube downloads (server)</h2>
+        <p className="text-sm text-muted">
+          Still used for the Chrome extension and when Lidarr is off. Export YouTube cookies (e.g. &quot;Get cookies.txt
+          LOCALLY&quot;), save as <code className="text-white">cookies.txt</code> next to docker-compose, restart
+          worker/API.
         </p>
         {server && !server.youtube_cookies_ready && (
           <p className="text-sm text-amber-200/90">Your server reports cookies are missing or empty.</p>
@@ -93,7 +163,7 @@ export default function SetupGuideContent() {
       </section>
 
       <section className="mb-8 max-w-2xl space-y-3 bg-panel p-5 rounded-lg">
-        <h2 className="text-lg font-semibold">2. Chrome extension</h2>
+        <h2 className="text-lg font-semibold">3. Chrome extension</h2>
         <ol className="text-sm text-muted list-decimal list-inside space-y-2">
           <li>
             Open{" "}
@@ -111,7 +181,6 @@ export default function SetupGuideContent() {
           <li>Paste into extension options (or use &quot;Open Extension connect&quot; from options).</li>
           <li>
             Click <strong className="text-white">Reload</strong> on chrome://extensions after updating the zip.
-            Saves go through the extension background worker (avoids YouTube CORS).
           </li>
         </ol>
         <button type="button" onClick={copyApiUrl} className="text-sm bg-white/10 px-3 py-1.5 rounded-full">
@@ -120,12 +189,15 @@ export default function SetupGuideContent() {
       </section>
 
       <section className="mb-8 max-w-2xl space-y-3 bg-panel p-5 rounded-lg">
-        <h2 className="text-lg font-semibold">3. Spotify liked-songs sync</h2>
+        <h2 className="text-lg font-semibold">4. Spotify liked-songs sync</h2>
         {!server?.spotify_server_configured ? (
           <>
             <p className="text-sm text-muted">
-              An admin should open <Link href="/admin" className="text-spotify underline">Admin → Integrations</Link> and
-              paste Spotify Client ID, Client secret, and redirect URI (no .env editing required).
+              An admin should open{" "}
+              <Link href="/admin" className="text-spotify underline">
+                Admin → Integrations
+              </Link>{" "}
+              and paste Spotify Client ID, Client secret, and redirect URI.
             </p>
             <p className="text-xs text-muted">
               In Spotify Dashboard use redirect URI:{" "}
@@ -155,10 +227,17 @@ export default function SetupGuideContent() {
       </section>
 
       <section className="max-w-2xl space-y-2 bg-panel p-5 rounded-lg">
-        <h2 className="text-lg font-semibold">4. Users &amp; invites</h2>
+        <h2 className="text-lg font-semibold">5. Users &amp; invites</h2>
         <p className="text-sm text-muted">
-          Create invite codes under <Link href="/admin" className="text-spotify underline">Admin</Link>.
+          Create invite codes under{" "}
+          <Link href="/admin" className="text-spotify underline">
+            Admin
+          </Link>
+          .
         </p>
+        {adminHints && (
+          <p className="text-xs text-muted">Admin hint: {String(adminHints.configure_in_ui || "")}</p>
+        )}
       </section>
     </>
   );

@@ -109,6 +109,63 @@ def browse_artist_releases(artist_mbid: str, limit: int = 25) -> list[dict[str, 
     return data.get("release-groups") or []
 
 
+def search_artists(query: str, limit: int = 10) -> list[dict[str, Any]]:
+    data = _get("/artist", {"query": query, "limit": str(limit)})
+    if not data:
+        return []
+    out = []
+    for a in data.get("artists") or []:
+        out.append(
+            {
+                "mbid": a.get("id"),
+                "name": a.get("name") or "Unknown",
+                "disambiguation": a.get("disambiguation"),
+                "type": a.get("type"),
+                "score": a.get("score"),
+            }
+        )
+    return out
+
+
+def search_recordings(query: str, limit: int = 20) -> list[dict[str, Any]]:
+    data = _get("/recording", {"query": query, "limit": str(limit)})
+    if not data:
+        return []
+    out: list[dict[str, Any]] = []
+    for rec in data.get("recordings") or []:
+        credit = rec.get("artist-credit") or []
+        artist = " ".join(
+            (c.get("name") or "") + (c.get("joinphrase") or "") for c in credit
+        ).strip() or "Unknown Artist"
+        artist_mbid = None
+        if credit and isinstance(credit[0].get("artist"), dict):
+            artist_mbid = credit[0]["artist"].get("id")
+        releases = rec.get("releases") or []
+        album = releases[0].get("title") if releases else None
+        release_mbid = releases[0].get("id") if releases else None
+        out.append(
+            {
+                "recording_mbid": rec.get("id"),
+                "title": rec.get("title") or "Unknown",
+                "artist": artist,
+                "artist_mbid": artist_mbid,
+                "album": album,
+                "release_mbid": release_mbid,
+                "duration_ms": rec.get("length"),
+                "score": rec.get("score"),
+            }
+        )
+    return out
+
+
+def artist_lookup(artist_mbid: str) -> dict[str, Any] | None:
+    return _get(f"/artist/{artist_mbid}", {"inc": "tags+url-rels"})
+
+
+def artist_release_groups(artist_mbid: str, limit: int = 50) -> list[dict[str, Any]]:
+    return browse_artist_releases(artist_mbid, limit=limit)
+
+
 def search_recordings_by_tag(tag: str, limit: int = 20) -> list[dict[str, Any]]:
     data = _get("/recording", {"query": f'tag:"{tag}"', "limit": str(limit)})
     if not data:

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, getApiUrl, type Playlist, type Track } from "@/lib/api";
-import { artistHref, splitArtistNames } from "@/lib/artists";
+import { artistHref, splitArtistNames, useAmpersandKeeps } from "@/lib/artists";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { PlaylistEditModal } from "@/components/PlaylistEditModal";
 import { usePlayerStore } from "@/store/player";
@@ -14,6 +14,7 @@ type Filter = "playlists" | "artists";
 type MenuState = { x: number; y: number; playlist: Playlist } | null;
 
 export function Sidebar() {
+  useAmpersandKeeps();
   const pathname = usePathname();
   const router = useRouter();
   const addToQueue = usePlayerStore((s) => s.addToQueue);

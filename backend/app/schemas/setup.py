@@ -9,6 +9,11 @@ class ServerSetupPublic(BaseModel):
     youtube_cookies_ready: bool
     spotify_redirect_uri: str
     public_web_url: str
+    lidarr_configured: bool = False
+    lidarr_reachable: bool = False
+    lidarr_hint: str | None = None
+    listenbrainz_ok: bool = False
+    musicbrainz_ok: bool = False
 
 
 class UserSetupChecklist(BaseModel):
@@ -16,3 +21,5 @@ class UserSetupChecklist(BaseModel):
     spotify_account_linked: bool
     spotify_redirect_uri: str
     extension_cors_hint: str
+    lidarr_ready: bool = False
+    lidarr_hint: str | None = None

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { api, downloadBlob, getOAuthApiUrl, type Track } from "@/lib/api";
 import { TrackEditModal } from "@/components/TrackEditModal";
 import { WebSocketBridge } from "@/lib/ws";
+import { refreshAmpersandKeeps } from "@/lib/artists";
 
 type Stats = {
   tracks_count: number;
@@ -17,6 +18,19 @@ type Stats = {
 type Checklist = {
   spotify_server_configured: boolean;
   spotify_account_linked: boolean;
+};
+
+type AmpKeep = {
+  id: number | null;
+  display_name: string;
+  normalized_name: string;
+  source: string;
+  track_count: number;
+};
+
+type AmpRules = {
+  kept: AmpKeep[];
+  candidates: AmpKeep[];
 };
 
 function formatBytes(n: number) {
@@ -33,11 +47,23 @@ export default function ProfileContent() {
   const [editing, setEditing] = useState<Track | null>(null);
   const [extMsg, setExtMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [ampRules, setAmpRules] = useState<AmpRules | null>(null);
+  const [customKeep, setCustomKeep] = useState("");
+  const [ampBusy, setAmpBusy] = useState(false);
+
+  const loadAmp = () =>
+    api<AmpRules>("/api/v1/artists/ampersand-rules")
+      .then((r) => {
+        setAmpRules(r);
+        void refreshAmpersandKeeps();
+      })
+      .catch(() => setAmpRules(null));
 
   const load = () => {
     api<Stats>("/api/v1/auth/me/stats").then(setStats);
     api<Checklist>("/api/v1/setup/checklist").then(setChecklist);
     api<Track[]>("/api/v1/tracks").then(setTracks).catch(() => setTracks([]));
+    loadAmp();
   };
 
   useEffect(() => {
@@ -77,6 +103,38 @@ export default function ProfileContent() {
     }
   }
 
+  async function keepArtist(name: string) {
+    setAmpBusy(true);
+    try {
+      const res = await api<{ tracks_updated: number }>("/api/v1/artists/ampersand-rules", {
+        method: "POST",
+        body: JSON.stringify({ display_name: name }),
+      });
+      setBanner(
+        `Kept “${name}” as one artist${res.tracks_updated ? ` · ${res.tracks_updated} tracks updated` : ""}`
+      );
+      setCustomKeep("");
+      await loadAmp();
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : "Could not save artist");
+    } finally {
+      setAmpBusy(false);
+    }
+  }
+
+  async function unkeepArtist(id: number) {
+    setAmpBusy(true);
+    try {
+      await api(`/api/v1/artists/ampersand-rules/${id}`, { method: "DELETE" });
+      setBanner("Removed keep rule");
+      await loadAmp();
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : "Could not remove rule");
+    } finally {
+      setAmpBusy(false);
+    }
+  }
+
   return (
     <>
       <WebSocketBridge onRefresh={load} />
@@ -94,6 +152,100 @@ export default function ProfileContent() {
           <Stat label="Storage quota" value={formatBytes(stats.storage_quota_bytes)} />
         </div>
       )}
+
+      <section className="mb-10 max-w-2xl">
+        <h3 className="font-semibold text-lg mb-1">Artists with &amp;</h3>
+        <p className="text-sm text-muted mb-4">
+          Some names are one act (W&amp;W, D-Block &amp; S-te-Fan). Collaborations should split
+          (Steve Aoki &amp; Sub Zero Project → two artists). Keep the ones that should stay together.
+        </p>
+
+        {ampRules && ampRules.candidates.length > 0 && (
+          <div className="mb-4">
+            <h4 className="text-xs uppercase tracking-wider text-muted mb-2">Suggested — keep as one?</h4>
+            <ul className="space-y-2">
+              {ampRules.candidates.map((c) => (
+                <li
+                  key={c.normalized_name}
+                  className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{c.display_name}</p>
+                    <p className="text-xs text-muted">
+                      {c.track_count} track{c.track_count === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={ampBusy}
+                    onClick={() => keepArtist(c.display_name)}
+                    className="shrink-0 text-xs font-semibold bg-spotify text-black px-3 py-1.5 rounded-full disabled:opacity-50"
+                  >
+                    Keep as one
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mb-4">
+          <h4 className="text-xs uppercase tracking-wider text-muted mb-2">Kept as one artist</h4>
+          <ul className="space-y-2">
+            {(ampRules?.kept || []).map((k) => (
+              <li
+                key={`${k.source}-${k.normalized_name}`}
+                className="flex items-center justify-between gap-3 rounded-md bg-black/20 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{k.display_name}</p>
+                  <p className="text-xs text-muted">
+                    {k.source === "builtin" ? "Built-in" : "Your rule"}
+                    {k.track_count ? ` · ${k.track_count} tracks` : ""}
+                  </p>
+                </div>
+                {k.source === "user" && k.id != null ? (
+                  <button
+                    type="button"
+                    disabled={ampBusy}
+                    onClick={() => unkeepArtist(k.id!)}
+                    className="shrink-0 text-xs text-muted hover:text-white disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted shrink-0">Locked</span>
+                )}
+              </li>
+            ))}
+            {(!ampRules || ampRules.kept.length === 0) && (
+              <li className="text-sm text-muted px-1">No keep rules yet.</li>
+            )}
+          </ul>
+        </div>
+
+        <form
+          className="flex flex-wrap gap-2 items-center"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (customKeep.trim()) void keepArtist(customKeep.trim());
+          }}
+        >
+          <input
+            value={customKeep}
+            onChange={(e) => setCustomKeep(e.target.value)}
+            placeholder="e.g. Showtek & Noisecontrollers"
+            className="flex-1 min-w-[12rem] bg-black/30 border border-white/10 rounded-md px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={ampBusy || !customKeep.trim()}
+            className="text-sm font-semibold bg-white/10 px-4 py-2 rounded-full disabled:opacity-50"
+          >
+            Add keep rule
+          </button>
+        </form>
+      </section>
 
       <section className="mb-10">
         <h3 className="font-semibold text-lg mb-3">Library storage</h3>

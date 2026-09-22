@@ -184,6 +184,15 @@ def download_youtube_audio(
         pass
     if isinstance(meta.get("duration"), float):
         meta["duration"] = int(meta["duration"])
+
+    # Normalize multi-artist credits ( & / X / feat → comma list when appropriate)
+    try:
+        from app.services.artist_normalize import normalize_for_library
+
+        meta["artist"] = normalize_for_library(meta["artist"])
+    except Exception:
+        logger.exception("artist normalize failed")
+
     return meta, audio_path, thumb
 
 

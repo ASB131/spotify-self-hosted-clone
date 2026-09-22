@@ -118,16 +118,25 @@ services:
     depends_on:
       - api
 
-  # Optional: docker compose --profile lidarr up -d
+  # Optional Lidarr only (use your existing qBittorrent / torrent client).
+  # Start with: docker compose --profile arr up -d
+  # Point Lidarr at your host qBittorrent (see Setup guide). Do not package qBittorrent here.
   lidarr:
-    profiles: ["lidarr"]
+    profiles: ["arr"]
     image: lscr.io/linuxserver/lidarr:latest
     restart: unless-stopped
     ports:
       - "${LIDARR_PORT:-8686}:8686"
     environment:
-      PUID: "1000"
-      PGID: "1000"
-      TZ: UTC
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
     volumes:
       - ${LIDARR_CONFIG:-./data/lidarr}:/config
+      - ${MUSIC_VOLUME:-./data/music}:/music
+      # Optional: mount your torrent completed folder if Lidarr needs to see qBittorrent paths
+      - ${TORRENTS_VOLUME:-./data/torrents}:/downloads
+    # Host network note: from Lidarr container, reach host qBittorrent via
+    # host.docker.internal (Docker Desktop) or the host LAN IP / docker bridge gateway on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
