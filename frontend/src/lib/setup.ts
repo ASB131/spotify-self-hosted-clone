@@ -1,4 +1,4 @@
-"""Redirect to /setup when the server has no admin user yet."""
+/** Redirect helpers when the server has no admin user yet. */
 
 import { API_URL } from "@/lib/api";
 
