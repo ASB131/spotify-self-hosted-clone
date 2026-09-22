@@ -24,7 +24,6 @@ export function AudioPlayerBar() {
     repeat,
     queue,
     queuePanelOpen,
-    crossfadeSeconds,
     toggle,
     next,
     prev,
@@ -39,7 +38,6 @@ export function AudioPlayerBar() {
     hydrate,
     persist,
     toggleQueuePanel,
-    setCrossfadeSeconds,
     tickCrossfade,
   } = usePlayerStore();
 
@@ -234,21 +232,6 @@ export function AudioPlayerBar() {
       </div>
 
       <div className="flex justify-end items-center gap-2 sm:gap-3 min-w-0">
-        <label className="hidden lg:flex items-center gap-1.5 text-[10px] text-muted" title="Crossfade (0 = gapless)">
-          <span className="whitespace-nowrap">Fade</span>
-          <select
-            value={crossfadeSeconds}
-            onChange={(e) => setCrossfadeSeconds(Number(e.target.value))}
-            className="bg-[#282828] text-white text-xs rounded px-1 py-0.5 outline-none"
-            aria-label="Crossfade seconds"
-          >
-            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
-              <option key={n} value={n}>
-                {n === 0 ? "Off" : `${n}s`}
-              </option>
-            ))}
-          </select>
-        </label>
         <button
           type="button"
           onClick={toggleQueuePanel}

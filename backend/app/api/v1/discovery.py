@@ -284,3 +284,13 @@ def listening_stats(
             for name, cnt in top_artists
         ],
     )
+
+
+@router.delete("/me/listening-stats")
+def clear_listening_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete all play history for the current user (stats + recently played)."""
+    from sqlalchemy import delete
+
+    result = db.execute(delete(PlayEvent).where(PlayEvent.user_id == user.id))
+    db.commit()
+    return {"deleted": result.rowcount or 0}

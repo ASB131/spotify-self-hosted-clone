@@ -32,7 +32,7 @@ export default function LibraryPage() {
   }
 
   return (
-    <>
+    <div className="min-w-0 max-w-full pb-8">
       <WebSocketBridge onRefresh={load} />
       <h2 className="text-2xl font-bold mb-2">Your Library</h2>
       <p className="text-sm text-muted mb-6">Playlists and every song in your library.</p>
@@ -42,10 +42,11 @@ export default function LibraryPage() {
         playlists={playlists}
         emptyMessage="No playlists yet. Use Create in the sidebar."
         compact
+        limit={12}
       />
 
       <h3 className="text-lg font-semibold mt-10 mb-3">All songs</h3>
       <TrackTable tracks={tracks} onChanged={load} onUpgrade={upgrade} emptyMessage="Your library is empty." />
-    </>
+    </div>
   );
 }

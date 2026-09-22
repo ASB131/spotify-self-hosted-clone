@@ -83,6 +83,7 @@ export default function HomePage() {
               playlists={playlists.slice(0, 10)}
               emptyMessage="No playlists yet. Create one from Your Library."
               compact
+              limit={10}
             />
           </section>
 
@@ -116,50 +117,52 @@ export default function HomePage() {
             {data.recently_played_tracks.length === 0 && data.recently_played_playlists.length === 0 ? (
               <p className="text-sm text-muted">Play something. It will show up here.</p>
             ) : (
-              <div className="flex gap-4 overflow-x-auto pb-2">
-                {data.recently_played_playlists.map((p) => (
-                  <Link key={`pl-${p.id}`} href={`/playlist/${p.id}`} className="w-36 shrink-0 group">
-                    <div
-                      className={`aspect-square rounded-md mb-2 overflow-hidden shadow-md ${
-                        p.is_liked_songs
-                          ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center text-3xl"
-                          : "bg-[#282828]"
-                      }`}
+              <div className="min-w-0 overflow-x-auto">
+                <div className="flex gap-4 pb-2">
+                  {data.recently_played_playlists.slice(0, 4).map((p) => (
+                    <Link key={`pl-${p.id}`} href={`/playlist/${p.id}`} className="w-36 shrink-0 group">
+                      <div
+                        className={`aspect-square rounded-md mb-2 overflow-hidden shadow-md ${
+                          p.is_liked_songs
+                            ? "bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center text-3xl"
+                            : "bg-[#282828]"
+                        }`}
+                      >
+                        {p.is_liked_songs ? (
+                          "♪"
+                        ) : p.cover_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`${getApiUrl()}${p.cover_url}`} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="flex w-full h-full items-center justify-center text-2xl text-muted">
+                            {p.name.charAt(0)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold truncate group-hover:underline">{p.name}</p>
+                      <p className="text-xs text-muted">Playlist</p>
+                    </Link>
+                  ))}
+                  {data.recently_played_tracks.slice(0, 8).map((t) => (
+                    <button
+                      key={`t-${t.id}`}
+                      type="button"
+                      onClick={() => playTrackInContext(t, data.recently_played_tracks.slice(0, 8))}
+                      className="w-36 shrink-0 text-left group"
                     >
-                      {p.is_liked_songs ? (
-                        "♪"
-                      ) : p.cover_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={`${getApiUrl()}${p.cover_url}`} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="flex w-full h-full items-center justify-center text-2xl text-muted">
-                          {p.name.charAt(0)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm font-semibold truncate group-hover:underline">{p.name}</p>
-                    <p className="text-xs text-muted">Playlist</p>
-                  </Link>
-                ))}
-                {data.recently_played_tracks.map((t) => (
-                  <button
-                    key={`t-${t.id}`}
-                    type="button"
-                    onClick={() => playTrackInContext(t, data.recently_played_tracks)}
-                    className="w-36 shrink-0 text-left group"
-                  >
-                    <div className="aspect-square rounded-md mb-2 overflow-hidden bg-[#282828] shadow-md">
-                      {t.art_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={`${getApiUrl()}${t.art_url}`} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="flex w-full h-full items-center justify-center text-muted">♪</span>
-                      )}
-                    </div>
-                    <p className="text-sm font-semibold truncate group-hover:underline">{t.title}</p>
-                    <ArtistLinks artist={t.artist} className="text-xs text-muted truncate block" />
-                  </button>
-                ))}
+                      <div className="aspect-square rounded-md mb-2 overflow-hidden bg-[#282828] shadow-md">
+                        {t.art_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`${getApiUrl()}${t.art_url}`} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="flex w-full h-full items-center justify-center text-muted">♪</span>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold truncate group-hover:underline">{t.title}</p>
+                      <ArtistLinks artist={t.artist} className="text-xs text-muted truncate block" />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </section>

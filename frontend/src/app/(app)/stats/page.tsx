@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 
@@ -29,18 +29,40 @@ export default function StatsPage() {
   const [range, setRange] = useState<"7d" | "30d" | "all">("30d");
   const [data, setData] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api<Stats>(`/api/v1/me/listening-stats?range=${range}`)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load stats"));
   }, [range]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function clearStats() {
+    const ok = window.confirm(
+      "Clear all listening history and stats? This removes play records used for recently played, history, and these charts."
+    );
+    if (!ok) return;
+    setClearing(true);
+    setError(null);
+    try {
+      await api("/api/v1/me/listening-stats", { method: "DELETE" });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to clear stats");
+    } finally {
+      setClearing(false);
+    }
+  }
+
   const maxTrack = Math.max(1, ...(data?.top_tracks.map((t) => t.play_count) || [1]));
   const maxArtist = Math.max(1, ...(data?.top_artists.map((t) => t.play_count) || [1]));
 
   return (
-    <div className="max-w-3xl space-y-8 pb-10">
+    <div className="max-w-3xl space-y-8 pb-10 min-w-0">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Listening stats</h1>
@@ -50,19 +72,29 @@ export default function StatsPage() {
             </Link>
           </p>
         </div>
-        <div className="flex gap-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setRange(r.id)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium ${
-                range === r.id ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/15"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            {RANGES.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRange(r.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium ${
+                  range === r.id ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/15"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={() => void clearStats()}
+            className="px-3 py-1.5 rounded-full text-sm text-red-400 bg-white/5 hover:bg-white/10 disabled:opacity-40"
+          >
+            Clear stats
+          </button>
         </div>
       </header>
 

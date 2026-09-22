@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
 
         <div className="flex-1 min-w-0 flex flex-col rounded-lg bg-surface overflow-hidden">
-          <main className="flex-1 overflow-auto px-4 sm:px-6 pb-4 pt-4">{children}</main>
+          <main className="flex-1 overflow-auto px-4 sm:px-6 pb-4 pt-4 min-w-0">{children}</main>
         </div>
       </div>
       <AudioPlayerBar />

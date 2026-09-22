@@ -306,22 +306,23 @@ export function TrackTable({
         </div>
       )}
 
-      <div className="w-full">
-        <table className="w-full text-sm border-collapse table-fixed">
+      <div className="w-full min-w-0 overflow-x-auto">
+        <table className="w-full text-sm border-collapse table-fixed min-w-[480px]">
           <thead className="sticky top-0 z-10 bg-surface/95 backdrop-blur">
             <tr className="text-muted border-b border-white/10 text-xs uppercase tracking-wider">
-              <th className="w-10 py-2">
-                <input
-                  type="checkbox"
-                  checked={selected.size > 0 && selected.size === sorted.length}
-                  onChange={toggleSelectAll}
-                  aria-label="Select all"
-                  className="accent-spotify"
-                />
+              <th className="w-12 py-2 text-right pr-3">
+                <span className="inline-flex items-center justify-end w-8">
+                  <input
+                    type="checkbox"
+                    checked={selected.size > 0 && selected.size === sorted.length}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all"
+                    className={`accent-spotify h-3.5 w-3.5 ${
+                      selected.size > 0 ? "opacity-100" : "opacity-0 hover:opacity-100 focus:opacity-100"
+                    }`}
+                  />
+                </span>
               </th>
-              <SortTh active={sortKey === "index"} dir={sortDir} onClick={() => toggleSort("index")} className="w-10 text-right pr-2">
-                #
-              </SortTh>
               <SortTh active={sortKey === "title"} dir={sortDir} onClick={() => toggleSort("title")} className="text-left">
                 Title
               </SortTh>
@@ -356,6 +357,7 @@ export function TrackTable({
             {sorted.map((t, i) => {
               const active = current?.id === t.id;
               const src = artUrl(t);
+              const isSelected = selected.has(t.id);
               return (
                 <tr
                   key={t.id}
@@ -365,17 +367,25 @@ export function TrackTable({
                   }}
                   className="group h-14 border-b border-transparent hover:bg-white/[0.08]"
                 >
-                  <td className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(t.id)}
-                      onChange={() => toggleSelect(t.id)}
-                      aria-label={`Select ${t.title}`}
-                      className="accent-spotify"
-                    />
-                  </td>
-                  <td className="text-right pr-2 tabular-nums text-muted group-hover:text-white w-10">
-                    <span className={active ? "text-spotify" : ""}>{i + 1}</span>
+                  <td className="text-right pr-3 tabular-nums text-muted w-12">
+                    <span className="inline-flex items-center justify-end w-8 relative h-4">
+                      <span
+                        className={`absolute inset-0 flex items-center justify-end ${
+                          isSelected ? "opacity-0" : "group-hover:opacity-0"
+                        } ${active ? "text-spotify" : ""}`}
+                      >
+                        {i + 1}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(t.id)}
+                        aria-label={`Select ${t.title}`}
+                        className={`accent-spotify h-3.5 w-3.5 relative z-10 ${
+                          isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        }`}
+                      />
+                    </span>
                   </td>
                   <td className="py-2 pr-2">
                     <div className="flex items-center gap-3 min-w-0">

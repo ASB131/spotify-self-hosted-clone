@@ -6,6 +6,7 @@ import { api, downloadBlob, type Track } from "@/lib/api";
 import { TrackEditModal } from "@/components/TrackEditModal";
 import { WebSocketBridge } from "@/lib/ws";
 import { refreshAmpersandKeeps } from "@/lib/artists";
+import { usePlayerStore } from "@/store/player";
 
 type Stats = {
   tracks_count: number;
@@ -42,6 +43,8 @@ export default function ProfileContent() {
   const [ampRules, setAmpRules] = useState<AmpRules | null>(null);
   const [customKeep, setCustomKeep] = useState("");
   const [ampBusy, setAmpBusy] = useState(false);
+  const crossfadeSeconds = usePlayerStore((s) => s.crossfadeSeconds);
+  const setCrossfadeSeconds = usePlayerStore((s) => s.setCrossfadeSeconds);
 
   const loadAmp = () =>
     api<AmpRules>("/api/v1/artists/ampersand-rules")
@@ -135,6 +138,28 @@ export default function ProfileContent() {
           <Stat label="Quota" value={formatBytes(stats.storage_quota_bytes)} />
         </div>
       )}
+
+      <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg border border-white/5">
+        <h3 className="font-semibold">Playback</h3>
+        <p className="text-sm text-muted">
+          Crossfade between songs. Set to Off for gapless playback (next track preloads and swaps on end).
+        </p>
+        <label className="flex items-center justify-between gap-4 text-sm">
+          <span>Crossfade</span>
+          <select
+            value={crossfadeSeconds}
+            onChange={(e) => setCrossfadeSeconds(Number(e.target.value))}
+            className="bg-[#242424] text-white text-sm rounded-md px-3 py-2 outline-none focus:ring-1 focus:ring-white"
+            aria-label="Crossfade seconds"
+          >
+            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "Off (gapless)" : `${n} seconds`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
 
       <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg border border-white/5">
         <h3 className="font-semibold">Chrome extension</h3>
