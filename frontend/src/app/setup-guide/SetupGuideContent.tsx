@@ -110,7 +110,10 @@ export default function SetupGuideContent() {
             → download the extension zip and load it in <code className="text-white">chrome://extensions</code>.
           </li>
           <li>Paste into extension options (or use &quot;Open Extension connect&quot; from options).</li>
-          <li>{checklist?.extension_cors_hint}</li>
+          <li>
+            Click <strong className="text-white">Reload</strong> on chrome://extensions after updating the zip.
+            Saves go through the extension background worker (avoids YouTube CORS).
+          </li>
         </ol>
         <button type="button" onClick={copyApiUrl} className="text-sm bg-white/10 px-3 py-1.5 rounded-full">
           Copy API URL ({getApiUrl()})

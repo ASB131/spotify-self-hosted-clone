@@ -62,12 +62,10 @@ export default function ExtensionConnectPage() {
           <Link href="/profile" className="text-spotify underline">
             Download &amp; load
           </Link>{" "}
-          the extension if you have not already.
+          the extension (or click Reload on chrome://extensions after updates).
         </li>
-        <li>Open extension options and save API URL + token.</li>
-        <li>
-          Add <code className="text-white">chrome-extension://…</code> to server <code className="text-white">CORS_ORIGINS</code>.
-        </li>
+        <li>Paste API URL (<code className="text-white">http://localhost:8000</code>) and token into Options → Save.</li>
+        <li>On YouTube, click Save to Resonance. Requests go through the extension background (not page CORS).</li>
       </ol>
 
       <Link href="/setup-guide" className="text-spotify underline text-sm">

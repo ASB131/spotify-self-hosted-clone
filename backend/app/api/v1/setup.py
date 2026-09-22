@@ -47,5 +47,9 @@ def user_setup_checklist(user: User = Depends(get_current_user), db: Session = D
         spotify_server_configured=sp.configured,
         spotify_account_linked=bool(user.spotify_refresh_token),
         spotify_redirect_uri=sp.redirect_uri,
-        extension_cors_hint="Add chrome-extension://YOUR_EXTENSION_ID to CORS_ORIGINS in Admin → Integrations (or .env), then restart API.",
+        extension_cors_hint=(
+            "Reload the unpacked extension after updates. API calls go through the extension "
+            "background worker (no CORS_ORIGINS edit required for YouTube saves). "
+            "Keep API URL = http://localhost:8000 and a fresh token from Extension connect."
+        ),
     )

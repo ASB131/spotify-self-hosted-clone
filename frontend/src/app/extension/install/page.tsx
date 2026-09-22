@@ -8,27 +8,30 @@ export default function ExtensionInstallPage() {
         <li>
           Download the zip from{" "}
           <Link href="/profile" className="text-spotify underline">
-            Profile → Add Chrome extension
-          </Link>{" "}
-          if you have not already.
+            Profile → Download extension
+          </Link>
+          .
         </li>
         <li>Unzip to a folder, for example <code className="text-white">Downloads/resonance-extension</code>.</li>
         <li>
-          Open Chrome and go to{" "}
-          <code className="text-white bg-panel px-2 py-1 rounded">chrome://extensions</code> (copy/paste into the
-          address bar).
+          Open Chrome →{" "}
+          <code className="text-white bg-panel px-2 py-1 rounded">chrome://extensions</code>.
         </li>
-        <li>Enable <strong className="text-white">Developer mode</strong> (top right).</li>
-        <li>Click <strong className="text-white">Load unpacked</strong> and select the unzipped folder.</li>
-        <li>Open the extension options (puzzle icon → Resonance → Options).</li>
+        <li>Enable <strong className="text-white">Developer mode</strong>, then <strong className="text-white">Load unpacked</strong> and pick that folder.</li>
         <li>
-          Set API URL to <code className="text-white">http://localhost:8000</code> (or your server) and paste your JWT
-          access token from the web app (browser DevTools → Application → Session Storage →{" "}
-          <code className="text-white">access_token</code>).
+          If you already loaded it before, click the <strong className="text-white">Reload</strong> button on the
+          extension card after downloading a new zip.
         </li>
         <li>
-          Add your extension ID to <code className="text-white">CORS_ORIGINS</code> in <code className="text-white">.env</code>{" "}
-          as <code className="text-white">chrome-extension://YOUR_ID</code> and restart the API container.
+          Open{" "}
+          <Link href="/extension/connect" className="text-spotify underline">
+            Extension connect
+          </Link>
+          , copy API URL + token, then open extension <strong className="text-white">Options</strong> and Save.
+        </li>
+        <li>
+          On YouTube, use <strong className="text-white">Save to Resonance</strong>. Downloads are queued via the
+          extension background worker (not the YouTube page), so CORS_ORIGINS is optional for this flow.
         </li>
       </ol>
       <Link href="/profile" className="inline-block mt-8 text-spotify underline">

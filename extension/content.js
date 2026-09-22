@@ -1,12 +1,27 @@
-const DEFAULT_API = "http://localhost:8000";
-
-async function getConfig() {
+function getConfig() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(["apiBase", "accessToken"], (data) => {
       resolve({
-        apiBase: data.apiBase || DEFAULT_API,
+        apiBase: data.apiBase || "http://localhost:8000",
         accessToken: data.accessToken || "",
       });
+    });
+  });
+}
+
+/** Call API via background service worker (avoids YouTube page CORS). */
+function apiCall(path, method, body) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "api", path, method, body }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!response) {
+        reject(new Error("No response from extension background"));
+        return;
+      }
+      resolve(response);
     });
   });
 }
@@ -15,20 +30,28 @@ function injectButton() {
   if (document.getElementById("resonance-save-btn")) return;
   const target =
     document.querySelector("#top-level-buttons-computed") ||
+    document.querySelector("#actions") ||
     document.querySelector("#menu-container ytd-menu-renderer")?.parentElement;
   if (!target) return;
 
   const btn = document.createElement("button");
   btn.id = "resonance-save-btn";
+  btn.type = "button";
   btn.textContent = "Save to Resonance";
-  btn.addEventListener("click", openModal);
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openModal();
+  });
   target.prepend(btn);
 }
 
 function videoMeta() {
-  const titleEl = document.querySelector("h1 yt-formatted-string, h1.title");
-  const title = titleEl?.textContent?.trim() || "";
-  const channel = document.querySelector("#channel-name a, ytd-channel-name a")?.textContent?.trim() || "";
+  const titleEl = document.querySelector("h1 yt-formatted-string, h1.title, #title h1");
+  const title = titleEl?.textContent?.trim() || document.title.replace(/ - YouTube$/, "");
+  const channel =
+    document.querySelector("#channel-name a, ytd-channel-name a, #owner #channel-name a")?.textContent?.trim() ||
+    "";
   const url = location.href.split("&")[0];
   return { title, artist: channel, url };
 }
@@ -68,20 +91,20 @@ function openModal() {
 }
 
 function escapeAttr(s) {
-  return s.replace(/"/g, "&quot;").replace(/</g, "");
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;");
 }
 
 async function loadPlaylists(backdrop) {
   const cfg = await getConfig();
   if (!cfg.accessToken) return;
   try {
-    const res = await fetch(`${cfg.apiBase}/api/v1/playlists`, {
-      headers: { Authorization: `Bearer ${cfg.accessToken}` },
-    });
-    if (!res.ok) return;
-    const lists = await res.json();
+    const res = await apiCall("/api/v1/playlists", "GET");
+    if (!res.ok || !Array.isArray(res.data)) return;
     const sel = backdrop.querySelector("#rs-dest");
-    lists
+    res.data
       .filter((p) => !p.is_liked_songs)
       .forEach((p) => {
         const opt = document.createElement("option");
@@ -90,7 +113,7 @@ async function loadPlaylists(backdrop) {
         sel.appendChild(opt);
       });
   } catch {
-    /* offline */
+    /* ignore */
   }
 }
 
@@ -98,7 +121,7 @@ async function submitDownload(backdrop, url) {
   const cfg = await getConfig();
   const status = backdrop.querySelector("#rs-status");
   if (!cfg.accessToken) {
-    status.textContent = "Set API URL and token in extension options.";
+    status.textContent = "Set API URL and token in extension options (or Extension connect page).";
     status.style.color = "#f87171";
     return;
   }
@@ -115,18 +138,20 @@ async function submitDownload(backdrop, url) {
     playlist_id: dest === "liked" ? null : Number(dest),
   };
   status.textContent = "Queuing…";
+  status.style.color = "#1db954";
   try {
-    const res = await fetch(`${cfg.apiBase}/api/v1/downloads`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.accessToken}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Failed");
-    status.textContent = `Queued (task ${data.task_id})`;
+    const res = await apiCall("/api/v1/downloads", "POST", body);
+    if (!res.ok) {
+      const detail = res.data?.detail;
+      const msg =
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d) => d.msg || d).join(", ")
+            : res.data?.detail || `HTTP ${res.status}`;
+      throw new Error(msg || "Failed");
+    }
+    status.textContent = `Queued (task ${res.data.task_id})`;
   } catch (e) {
     status.textContent = e.message || "Error";
     status.style.color = "#f87171";
