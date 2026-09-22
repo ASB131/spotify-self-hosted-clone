@@ -54,6 +54,10 @@ function sameOriginWs(): string {
   return `${proto}//${window.location.host}`;
 }
 
+function httpToWs(url: string): string {
+  return url.replace(/^http/i, "ws").replace(/\/$/, "");
+}
+
 /** Direct API origin for OAuth redirects (browser must reach FastAPI with auth cookies). */
 export function getOAuthApiUrl(): string {
   if (typeof window !== "undefined") {
@@ -107,6 +111,18 @@ export function getWsUrl(): string {
         /* ignore */
       }
       return runtime.replace(/\/$/, "");
+    }
+    // Prefer API direct origin for WS — Next.js /api proxy cannot upgrade WebSockets.
+    const apiDirect = (window as unknown as { __RESONANCE_API_DIRECT__?: string }).__RESONANCE_API_DIRECT__;
+    if (apiDirect && apiDirect.trim()) {
+      try {
+        const u = new URL(apiDirect);
+        if (!(isPrivateHostname(u.hostname) && u.hostname !== window.location.hostname)) {
+          return httpToWs(apiDirect);
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
   const env = (process.env.NEXT_PUBLIC_WS_URL || "").trim();

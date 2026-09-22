@@ -43,6 +43,8 @@ export default function ProfileContent() {
   const [ampRules, setAmpRules] = useState<AmpRules | null>(null);
   const [customKeep, setCustomKeep] = useState("");
   const [ampBusy, setAmpBusy] = useState(false);
+  const [defaultFormat, setDefaultFormat] = useState<"mp3" | "flac">("mp3");
+  const [fmtBusy, setFmtBusy] = useState(false);
   const crossfadeSeconds = usePlayerStore((s) => s.crossfadeSeconds);
   const setCrossfadeSeconds = usePlayerStore((s) => s.setCrossfadeSeconds);
 
@@ -57,12 +59,34 @@ export default function ProfileContent() {
   const load = () => {
     api<Stats>("/api/v1/auth/me/stats").then(setStats);
     api<Track[]>("/api/v1/tracks").then(setTracks).catch(() => setTracks([]));
+    api<{ default_audio_format?: string }>("/api/v1/auth/me")
+      .then((me) => {
+        const f = (me.default_audio_format || "mp3").toLowerCase();
+        setDefaultFormat(f === "flac" ? "flac" : "mp3");
+      })
+      .catch(() => undefined);
     loadAmp();
   };
 
   useEffect(() => {
     load();
   }, []);
+
+  async function saveDefaultFormat(next: "mp3" | "flac") {
+    setFmtBusy(true);
+    setDefaultFormat(next);
+    try {
+      await api("/api/v1/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({ default_audio_format: next }),
+      });
+      setBanner(`Default download quality set to ${next.toUpperCase()}`);
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : "Could not save quality preference");
+    } finally {
+      setFmtBusy(false);
+    }
+  }
 
   async function installChromeExtension() {
     setExtMsg(null);
@@ -157,6 +181,24 @@ export default function ProfileContent() {
                 {n === 0 ? "Off (gapless)" : `${n} seconds`}
               </option>
             ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="max-w-lg space-y-3 mb-8 bg-panel p-4 rounded-lg border border-white/5">
+        <h3 className="font-semibold">Downloads</h3>
+        <p className="text-sm text-muted">Default quality for new YouTube and URL downloads.</p>
+        <label className="flex items-center justify-between gap-4 text-sm">
+          <span>Default quality</span>
+          <select
+            value={defaultFormat}
+            disabled={fmtBusy}
+            onChange={(e) => void saveDefaultFormat(e.target.value as "mp3" | "flac")}
+            className="bg-[#242424] text-white text-sm rounded-md px-3 py-2 outline-none focus:ring-1 focus:ring-white disabled:opacity-50"
+            aria-label="Default download quality"
+          >
+            <option value="mp3">MP3</option>
+            <option value="flac">FLAC</option>
           </select>
         </label>
       </section>

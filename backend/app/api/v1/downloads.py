@@ -31,6 +31,9 @@ class DownloadJobPublic(BaseModel):
     stage: str
     error: Optional[str]
     track_id: Optional[int]
+    bytes_downloaded: Optional[int] = None
+    bytes_total: Optional[int] = None
+    speed_bps: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -45,7 +48,7 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
     if user.storage_used_bytes >= user.storage_quota_bytes:
         raise HTTPException(status_code=403, detail="Storage quota exceeded")
 
-    fmt = body.format.lower()
+    fmt = (body.format or user.default_audio_format or "mp3").lower()
     if fmt not in ("mp3", "flac"):
         raise HTTPException(status_code=400, detail="format must be mp3 or flac")
 
@@ -93,9 +96,13 @@ def queue_download(body: DownloadRequest, user: User = Depends(get_current_user)
             "error": None,
             "track_id": None,
             "url": job.url,
+            "audio_format": job.audio_format,
+            "bytes_downloaded": None,
+            "bytes_total": None,
+            "speed_bps": None,
         },
     )
-    return {"task_id": task.id, "job_id": job.id, "status": "queued"}
+    return {"task_id": task.id, "job_id": job.id, "status": "queued", "format": fmt}
 
 
 @router.get("/jobs", response_model=list[DownloadJobPublic])
@@ -117,6 +124,9 @@ def list_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_
             stage=j.stage,
             error=j.error,
             track_id=j.track_id,
+            bytes_downloaded=j.bytes_downloaded,
+            bytes_total=j.bytes_total,
+            speed_bps=j.speed_bps,
         )
         for j in rows
     ]

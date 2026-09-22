@@ -40,8 +40,14 @@ class UserPublic(BaseModel):
     role: str
     storage_quota_bytes: int
     storage_used_bytes: int
+    default_audio_format: str = "mp3"
 
     model_config = {"from_attributes": True}
+
+
+class UserPreferencesUpdate(BaseModel):
+    default_audio_format: Optional[str] = Field(default=None, pattern="^(mp3|flac)$")
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 class BootstrapResponse(UserPublic):
@@ -109,7 +115,7 @@ class DownloadRequest(BaseModel):
     url: str
     title: Optional[str] = None
     artist: Optional[str] = None
-    format: str = "mp3"
+    format: Optional[str] = None  # defaults to user.default_audio_format
     playlist_id: Optional[int] = None
     add_to_liked: bool = True
     added_via: Optional[str] = None

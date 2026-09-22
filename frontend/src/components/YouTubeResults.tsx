@@ -71,7 +71,6 @@ export function YouTubeResults({ query, heading = "YouTube", limit = 12, onQueue
           url: hit.url,
           title: hit.title,
           artist: hit.artist,
-          format: "mp3",
           added_via: "youtube_search",
         }),
       });

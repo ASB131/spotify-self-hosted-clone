@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { api, artUrl, type Playlist, type Track } from "@/lib/api";
 import { formatDuration, formatRelativeDate } from "@/lib/format";
 import { ArtistLinks } from "@/lib/artists";
@@ -21,14 +20,8 @@ type Props = {
 };
 
 type MenuState = { x: number; y: number; track: Track } | null;
-type SortKey = "index" | "title" | "artist" | "album" | "added" | "duration";
+type SortKey = "index" | "title" | "artist" | "added" | "duration" | "format";
 type SortDir = "asc" | "desc";
-
-function albumKey(album: string | null | undefined, artist: string) {
-  const a = (album || "Unknown Album").trim();
-  const primary = (artist || "Unknown Artist").split(",")[0]?.trim() || "Unknown Artist";
-  return encodeURIComponent(`${a}|${primary}`);
-}
 
 export function TrackTable({
   tracks,
@@ -70,7 +63,7 @@ export function TrackTable({
     [playlists, playlistId]
   );
 
-  const canRemoveFromPlaylist = !!playlistId && !isLikedSongs;
+  const canRemoveFromPlaylist = !!playlistId && !isLikedSongs && !isLikedPlaylist;
 
   const sorted = useMemo(() => {
     const copy = [...localTracks];
@@ -87,8 +80,8 @@ export function TrackTable({
       if (sortKey === "artist") {
         return (a.artist || "").localeCompare(b.artist || "", undefined, { sensitivity: "base" }) * mul;
       }
-      if (sortKey === "album") {
-        return (a.album || "").localeCompare(b.album || "", undefined, { sensitivity: "base" }) * mul;
+      if (sortKey === "format") {
+        return (a.format || "").localeCompare(b.format || "", undefined, { sensitivity: "base" }) * mul;
       }
       if (sortKey === "added") {
         const ta = a.added_at ? new Date(a.added_at).getTime() : 0;
@@ -125,23 +118,6 @@ export function TrackTable({
     else setSelected(new Set(sorted.map((t) => t.id)));
   }
 
-  async function toggleLike(track: Track) {
-    const liked = !!track.is_liked;
-    try {
-      if (liked) {
-        await api(`/api/v1/tracks/${track.id}/like`, { method: "DELETE" });
-      } else {
-        await api(`/api/v1/tracks/${track.id}/like`, { method: "POST" });
-      }
-      setLocalTracks((prev) =>
-        prev.map((t) => (t.id === track.id ? { ...t, is_liked: !liked } : t))
-      );
-      if (isLikedPlaylist && liked) onChanged?.();
-    } catch {
-      /* ignore */
-    }
-  }
-
   async function addTrackToPlaylist(trackId: number, destId: number) {
     try {
       await api(`/api/v1/playlists/${destId}/tracks`, {
@@ -154,13 +130,9 @@ export function TrackTable({
   }
 
   async function removeFromPlaylist(trackId: number) {
-    if (!playlistId || isLikedSongs) return;
+    if (!playlistId || isLikedSongs || isLikedPlaylist) return;
     try {
-      if (isLikedPlaylist) {
-        await api(`/api/v1/tracks/${trackId}/like`, { method: "DELETE" });
-      } else {
-        await api(`/api/v1/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
-      }
+      await api(`/api/v1/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
       onChanged?.();
     } catch {
       /* ignore */
@@ -199,13 +171,6 @@ export function TrackTable({
           onClick: () => addToQueue(menu.track),
         },
         {
-          id: "like",
-          label: menu.track.is_liked ? "Remove from Liked Songs" : "Add to Liked Songs",
-          onClick: () => {
-            void toggleLike(menu.track);
-          },
-        },
-        {
           id: "add-playlist",
           label: "Add to playlist",
           submenu:
@@ -223,7 +188,7 @@ export function TrackTable({
           ? [
               {
                 id: "remove",
-                label: isLikedPlaylist ? "Remove from Liked Songs" : "Remove from playlist",
+                label: "Remove from playlist",
                 danger: true,
                 onClick: () => {
                   void removeFromPlaylist(menu.track.id);
@@ -327,12 +292,12 @@ export function TrackTable({
                 Title
               </SortTh>
               <SortTh
-                active={sortKey === "album"}
+                active={sortKey === "format"}
                 dir={sortDir}
-                onClick={() => toggleSort("album")}
-                className="text-left hidden lg:table-cell w-36"
+                onClick={() => toggleSort("format")}
+                className="text-left hidden sm:table-cell w-20"
               >
-                Album
+                Quality
               </SortTh>
               <SortTh
                 active={sortKey === "added"}
@@ -416,31 +381,14 @@ export function TrackTable({
                       </div>
                     </div>
                   </td>
-                  <td className="py-2 text-muted hidden lg:table-cell text-sm truncate">
-                    {t.album ? (
-                      <Link
-                        href={`/album/${albumKey(t.album, t.artist)}`}
-                        className="hover:underline hover:text-white"
-                      >
-                        {t.album}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
+                  <td className="py-2 text-muted hidden sm:table-cell text-sm uppercase tracking-wide">
+                    {(t.format || "—").toUpperCase()}
                   </td>
                   <td className="py-2 text-muted hidden md:table-cell text-sm">
                     {formatRelativeDate(t.added_at)}
                   </td>
                   <td className="py-2 text-right text-muted pr-4">
                     <div className="inline-flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => void toggleLike(t)}
-                        className={`p-1.5 ${t.is_liked ? "text-spotify opacity-100" : "text-muted opacity-0 group-hover:opacity-100 hover:text-white"}`}
-                        aria-label={t.is_liked ? "Unlike" : "Like"}
-                      >
-                        <HeartIcon filled={!!t.is_liked} />
-                      </button>
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
@@ -473,14 +421,6 @@ export function TrackTable({
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       <TrackEditModal track={editing} onClose={() => setEditing(null)} onSaved={() => onChanged?.()} />
     </>
-  );
-}
-
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 13.5S2.5 10 2.5 6.2A2.95 2.95 0 0 1 8 4.1a2.95 2.95 0 0 1 5.5 2.1C13.5 10 8 13.5 8 13.5z" />
-    </svg>
   );
 }
 

@@ -80,7 +80,7 @@ export default function HomePage() {
               </Link>
             </div>
             <PlaylistGrid
-              playlists={playlists.slice(0, 10)}
+              playlists={playlists.filter((p) => !p.is_liked_playlist).slice(0, 10)}
               emptyMessage="No playlists yet. Create one from Your Library."
               compact
               limit={10}

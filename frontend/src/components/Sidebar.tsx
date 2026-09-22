@@ -76,10 +76,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   const q = query.trim().toLowerCase();
   const visiblePlaylists = playlists
+    .filter((p) => !p.is_liked_playlist)
     .filter((p) => !q || p.name.toLowerCase().includes(q))
     .slice()
     .sort((a, b) => {
-      const rank = (p: Playlist) => (p.is_liked_songs ? 0 : p.is_liked_playlist ? 1 : 2);
+      const rank = (p: Playlist) => (p.is_liked_songs ? 0 : 1);
       const d = rank(a) - rank(b);
       if (d !== 0) return d;
       return a.name.localeCompare(b.name);
@@ -126,7 +127,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         {
           id: "settings",
           label: "Playlist settings",
-          disabled: menu.playlist.is_liked_songs || !!menu.playlist.is_liked_playlist,
+          disabled: menu.playlist.is_liked_songs,
           onClick: () => setEditing(menu.playlist),
         },
       ]

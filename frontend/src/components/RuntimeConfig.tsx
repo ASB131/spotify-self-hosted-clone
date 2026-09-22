@@ -18,7 +18,12 @@ export function RuntimeConfig() {
           __RESONANCE_WS__?: string;
         };
         if (cfg.api_direct) w.__RESONANCE_API_DIRECT__ = cfg.api_direct;
-        if (cfg.ws_url) w.__RESONANCE_WS__ = cfg.ws_url;
+        if (cfg.ws_url) {
+          w.__RESONANCE_WS__ = cfg.ws_url;
+        } else if (cfg.api_direct) {
+          // Derive WS from API direct — Next.js cannot proxy WebSocket upgrades.
+          w.__RESONANCE_WS__ = cfg.api_direct.replace(/^http/i, "ws").replace(/\/$/, "");
+        }
       })
       .catch(() => {
         /* optional */

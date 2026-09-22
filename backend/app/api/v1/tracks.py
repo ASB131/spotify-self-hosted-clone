@@ -147,31 +147,18 @@ def update_track(
     return _track_public(track, link.added_at, link.added_via, link.is_liked)
 
 
-def _liked_playlist(db: Session, user_id: int) -> Playlist:
-    pl = db.scalar(
+def _liked_playlist(db: Session, user_id: int) -> Playlist | None:
+    return db.scalar(
         select(Playlist).where(Playlist.user_id == user_id, Playlist.is_liked_playlist.is_(True))
     )
-    if pl:
-        return pl
-    pl = Playlist(
-        user_id=user_id,
-        name="Liked Songs",
-        description="Songs you hearted",
-        is_liked_songs=False,
-        is_liked_playlist=True,
-    )
-    db.add(pl)
-    db.flush()
-    return pl
 
 
 @router.post("/{track_id}/like", response_model=TrackPublic)
 def like_track(track_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Deprecated: hearts / Liked Songs removed. Kept as no-op flag for old clients."""
     track, link = _user_track(db, user.id, track_id)
     link.is_liked = True
     db.add(link)
-    liked_pl = _liked_playlist(db, user.id)
-    _add_to_playlist(db, liked_pl.id, track.id)
     db.commit()
     db.refresh(track)
     db.refresh(link)
@@ -183,9 +170,7 @@ def unlike_track(track_id: int, user: User = Depends(get_current_user), db: Sess
     track, link = _user_track(db, user.id, track_id)
     link.is_liked = False
     db.add(link)
-    liked_pl = db.scalar(
-        select(Playlist).where(Playlist.user_id == user.id, Playlist.is_liked_playlist.is_(True))
-    )
+    liked_pl = _liked_playlist(db, user.id)
     if liked_pl:
         pt = db.scalar(
             select(PlaylistTrack).where(

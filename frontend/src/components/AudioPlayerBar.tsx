@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
 import { getBothAudios, getSharedAudio, onActiveAudioChange } from "@/lib/playerAudio";
-import { api, artUrl } from "@/lib/api";
+import { artUrl } from "@/lib/api";
 import { ArtistLinks } from "@/lib/artists";
 
 function fmt(sec: number) {
@@ -113,28 +113,6 @@ export function AudioPlayerBar() {
     };
   }, [bindAudio, hydrate, persist, setDuration, setProgress, onEnded, tickCrossfade]);
 
-  async function toggleLike() {
-    if (!current) return;
-    const liked = !!current.is_liked;
-    try {
-      if (liked) {
-        await api(`/api/v1/tracks/${current.id}/like`, { method: "DELETE" });
-        usePlayerStore.setState({
-          current: { ...current, is_liked: false },
-          queue: queue.map((t) => (t.id === current.id ? { ...t, is_liked: false } : t)),
-        });
-      } else {
-        await api(`/api/v1/tracks/${current.id}/like`, { method: "POST" });
-        usePlayerStore.setState({
-          current: { ...current, is_liked: true },
-          queue: queue.map((t) => (t.id === current.id ? { ...t, is_liked: true } : t)),
-        });
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
   if (!current) {
     return (
       <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0 player-bar pb-[env(safe-area-inset-bottom)]">
@@ -159,15 +137,6 @@ export function AudioPlayerBar() {
           <p className="truncate text-sm font-medium text-white">{current.title}</p>
           <ArtistLinks artist={current.artist} className="truncate text-xs text-muted block" linkClassName="text-muted" />
         </div>
-        <button
-          type="button"
-          onClick={() => void toggleLike()}
-          className={`shrink-0 p-2 ${current.is_liked ? "text-spotify" : "text-muted hover:text-white"}`}
-          aria-label={current.is_liked ? "Unlike" : "Like"}
-          aria-pressed={!!current.is_liked}
-        >
-          <HeartIcon filled={!!current.is_liked} />
-        </button>
       </div>
 
       <div className="flex flex-col items-center gap-1 min-w-0 col-span-2 md:col-span-1 order-3 md:order-none">
@@ -262,14 +231,6 @@ export function AudioPlayerBar() {
         />
       </div>
     </footer>
-  );
-}
-
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 13.5S2.5 10 2.5 6.2A2.95 2.95 0 0 1 8 4.1a2.95 2.95 0 0 1 5.5 2.1C13.5 10 8 13.5 8 13.5z" />
-    </svg>
   );
 }
 

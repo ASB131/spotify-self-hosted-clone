@@ -19,6 +19,9 @@ def update_job(
     track_id: Optional[int] = None,
     title: Optional[str] = None,
     artist: Optional[str] = None,
+    bytes_downloaded: Optional[int] = None,
+    bytes_total: Optional[int] = None,
+    speed_bps: Optional[int] = None,
 ) -> Optional[DownloadJob]:
     job = db.get(DownloadJob, job_id)
     if not job:
@@ -37,6 +40,12 @@ def update_job(
         job.title = title
     if artist:
         job.artist = artist
+    if bytes_downloaded is not None:
+        job.bytes_downloaded = max(0, int(bytes_downloaded))
+    if bytes_total is not None:
+        job.bytes_total = max(0, int(bytes_total)) if bytes_total else None
+    if speed_bps is not None:
+        job.speed_bps = max(0, int(speed_bps))
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -53,6 +62,10 @@ def update_job(
             "error": job.error,
             "track_id": job.track_id,
             "url": job.url,
+            "audio_format": job.audio_format,
+            "bytes_downloaded": job.bytes_downloaded,
+            "bytes_total": job.bytes_total,
+            "speed_bps": job.speed_bps,
         },
     )
     if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):

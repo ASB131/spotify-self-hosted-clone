@@ -35,6 +35,8 @@ class User(Base):
 
     storage_quota_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     storage_used_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # mp3 | flac — default for new YouTube downloads
+    default_audio_format: Mapped[str] = mapped_column(String(8), default="mp3", nullable=False)
 
     # Spotify OAuth (refresh token persists; access token refreshed by workers)
     spotify_refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

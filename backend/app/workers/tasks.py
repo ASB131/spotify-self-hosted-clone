@@ -23,6 +23,32 @@ from app.workers.spotify_auth import ensure_spotify_access_token
 logger = logging.getLogger(__name__)
 
 
+def _fmt_bytes(n: float | int | None) -> str:
+    if not n:
+        return "0 B"
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(n)} {unit}"
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+def _fmt_eta(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "?"
+    s = max(0, int(seconds))
+    if s < 60:
+        return f"{s}s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}m {s}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m"
+
+
 def _notify(user_id: int, event: str, data: dict) -> None:
     publish_user_event(user_id, event, data)
 
@@ -164,7 +190,51 @@ def download_youtube_track(
             title=title,
             artist=artist,
         )
-        meta, audio_path, thumb = download_youtube_audio(url, audio_format, title, artist)
+
+        import time as _time
+
+        _last_prog = [0.0]
+
+        def _on_ytdlp_progress(d: dict) -> None:
+            if d.get("status") != "downloading":
+                if d.get("status") == "finished":
+                    update_job(db, job_id, progress=70, stage="Converting / extracting audio…")
+                return
+            now = _time.monotonic()
+            if now - _last_prog[0] < 0.6:
+                return
+            _last_prog[0] = now
+            downloaded = d.get("downloaded_bytes") or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            speed = d.get("speed") or 0
+            pct = int(downloaded * 100 / total) if total else min(65, 15 + int(downloaded / (512 * 1024)))
+            mapped = 15 + int(max(0, min(100, pct)) * 0.55)
+            eta = d.get("eta")
+            if total and downloaded:
+                stage = f"Downloading… {_fmt_bytes(downloaded)} / {_fmt_bytes(total)}"
+                if eta is not None:
+                    stage += f" · ~{_fmt_eta(eta)} left"
+                elif speed:
+                    stage += f" · {_fmt_bytes(speed)}/s"
+            elif downloaded:
+                stage = f"Downloading… {_fmt_bytes(downloaded)}"
+                if speed:
+                    stage += f" · {_fmt_bytes(speed)}/s"
+            else:
+                stage = "Downloading from YouTube…"
+            update_job(
+                db,
+                job_id,
+                progress=mapped,
+                stage=stage,
+                bytes_downloaded=int(downloaded) if downloaded else None,
+                bytes_total=int(total) if total else None,
+                speed_bps=int(speed) if speed else None,
+            )
+
+        meta, audio_path, thumb = download_youtube_audio(
+            url, audio_format, title, artist, on_progress=_on_ytdlp_progress
+        )
         tmp_dir = audio_path.parent
         try:
             from app.services.artist_normalize import normalize_for_library

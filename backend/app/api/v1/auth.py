@@ -20,6 +20,7 @@ from app.schemas.auth import (
     RegisterRequest,
     SetupStatus,
     TokenResponse,
+    UserPreferencesUpdate,
     UserPublic,
     UserStats,
 )
@@ -104,15 +105,6 @@ def bootstrap_admin(body: BootstrapAdminRequest, response: Response, db: Session
             is_liked_songs=True,
         )
     )
-    db.add(
-        Playlist(
-            user_id=user.id,
-            name="Liked Songs",
-            description="Songs you hearted",
-            is_liked_songs=False,
-            is_liked_playlist=True,
-        )
-    )
     db.commit()
     db.refresh(user)
     access = create_access_token(user.id)
@@ -156,15 +148,6 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
             name="All Songs",
             description="Every track in your library",
             is_liked_songs=True,
-        )
-    )
-    db.add(
-        Playlist(
-            user_id=user.id,
-            name="Liked Songs",
-            description="Songs you hearted",
-            is_liked_songs=False,
-            is_liked_playlist=True,
         )
     )
     db.commit()
@@ -216,6 +199,22 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)) -> User:
+    return user
+
+
+@router.patch("/me", response_model=UserPublic)
+def update_me(
+    body: UserPreferencesUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if body.default_audio_format is not None:
+        user.default_audio_format = body.default_audio_format
+    if body.display_name is not None:
+        user.display_name = body.display_name.strip()
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return user
 
 

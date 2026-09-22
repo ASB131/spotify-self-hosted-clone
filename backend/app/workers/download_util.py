@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
@@ -20,6 +20,8 @@ from app.services.storage_paths import music_root, new_art_relative_path, new_tr
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+ProgressCallback = Callable[[dict], None]
 
 YOUTUBE_ID_RE = re.compile(r"(?:v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{6,})")
 
@@ -122,6 +124,7 @@ def download_youtube_audio(
     audio_format: str,
     title_override: Optional[str],
     artist_override: Optional[str],
+    on_progress: Optional[ProgressCallback] = None,
 ) -> Tuple[dict, Path, Optional[Path]]:
     """
     Download to a temp directory. Returns (info_dict, audio_path, thumbnail_path).
@@ -129,6 +132,13 @@ def download_youtube_audio(
     """
     tmp = Path(tempfile.mkdtemp(prefix="ytdlp_"))
     outtmpl = str(tmp / "%(id)s.%(ext)s")
+
+    def _hook(d: dict) -> None:
+        if on_progress:
+            try:
+                on_progress(d)
+            except Exception:
+                pass
 
     attempts: list[dict] = [
         _ydl_opts(audio_format, outtmpl, use_cookies=True),
@@ -144,6 +154,8 @@ def download_youtube_audio(
     last_exc: Exception | None = None
     info = None
     for i, opts in enumerate(attempts):
+        if on_progress:
+            opts = {**opts, "progress_hooks": [_hook]}
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
