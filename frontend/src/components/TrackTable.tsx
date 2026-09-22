@@ -2,6 +2,7 @@
 
 import { artUrl, type Track } from "@/lib/api";
 import { formatDuration, formatRelativeDate } from "@/lib/format";
+import { ArtistLinks } from "@/lib/artists";
 import { usePlayerStore } from "@/store/player";
 
 type Props = {
@@ -13,7 +14,7 @@ type Props = {
 
 export function TrackTable({ tracks, onRemove, onUpgrade, emptyMessage }: Props) {
   const current = usePlayerStore((s) => s.current);
-  const setTrack = usePlayerStore((s) => s.setTrack);
+  const playTrackInContext = usePlayerStore((s) => s.playTrackInContext);
 
   if (tracks.length === 0) {
     return <p className="text-sm text-muted py-8">{emptyMessage || "No songs yet."}</p>;
@@ -48,26 +49,33 @@ export function TrackTable({ tracks, onRemove, onUpgrade, emptyMessage }: Props)
                   <span className={active ? "text-spotify" : ""}>{i + 1}</span>
                 </td>
                 <td className="py-2">
-                  <button
-                    type="button"
-                    onClick={() => setTrack(t)}
-                    className="flex items-center gap-3 text-left w-full min-w-0"
-                  >
-                    <span className="w-10 h-10 shrink-0 bg-black/40 overflow-hidden rounded-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => playTrackInContext(t, tracks)}
+                      className="w-10 h-10 shrink-0 bg-black/40 overflow-hidden rounded-sm"
+                      aria-label={`Play ${t.title}`}
+                    >
                       {src ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={src} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <span className="flex w-full h-full items-center justify-center text-muted text-xs">♪</span>
                       )}
-                    </span>
-                    <span className="min-w-0">
-                      <span className={`block truncate font-medium ${active ? "text-spotify" : "text-white"}`}>
+                    </button>
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => playTrackInContext(t, tracks)}
+                        className={`block truncate font-medium text-left hover:underline ${
+                          active ? "text-spotify" : "text-white"
+                        }`}
+                      >
                         {t.title}
-                      </span>
-                      <span className="block truncate text-xs text-muted">{t.artist}</span>
-                    </span>
-                  </button>
+                      </button>
+                      <ArtistLinks artist={t.artist} className="block truncate text-xs text-muted" />
+                    </div>
+                  </div>
                 </td>
                 <td className="py-2 text-muted hidden sm:table-cell">{formatRelativeDate(t.added_at)}</td>
                 <td className="py-2 text-right text-muted tabular-nums">

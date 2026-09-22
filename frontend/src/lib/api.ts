@@ -97,8 +97,9 @@ export async function uploadFile<T>(path: string, file: File): Promise<T> {
   return res.json();
 }
 
-export function streamUrl(trackId: number) {
-  return `${getApiUrl()}/api/v1/tracks/${trackId}/stream`;
+export function streamUrl(track: Track | number) {
+  const id = typeof track === "number" ? track : track.id;
+  return `${getApiUrl()}/api/v1/tracks/${id}/stream`;
 }
 
 export function artUrl(track: Track) {

@@ -7,13 +7,13 @@ from typing import Optional, Tuple
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.track import AudioFormat, Track
 from app.models.user_track import UserTrack
 from app.services.storage_paths import track_file_path
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -74,20 +74,34 @@ def _stream_file_range(path: Path, start: int, end: int, content_type: str) -> S
     return StreamingResponse(iter_file(), status_code=206, media_type=content_type, headers=headers)
 
 
-def _client_supports_flac(accept: Optional[str]) -> bool:
+def _client_supports_flac(accept: Optional[str], user_agent: Optional[str]) -> bool:
+    """Chrome/Edge/Firefox play FLAC natively; prefer that over on-the-fly transcode."""
+    ua = (user_agent or "").lower()
+    if any(x in ua for x in ("chrome", "chromium", "edg/", "firefox", "crios")):
+        return True
     if not accept:
         return False
-    return "flac" in accept.lower() or "audio/flac" in accept.lower()
+    a = accept.lower()
+    return "audio/flac" in a or "audio/x-flac" in a
 
 
 def _transcode_flac_to_mp3_stream(path: Path) -> StreamingResponse:
-    """On-the-fly MP3 transcode when browser cannot play FLAC."""
+    """On-the-fly MP3 transcode when browser cannot play FLAC.
+
+    Map audio only — embedded cover art (mjpeg) otherwise breaks ffmpeg.
+    """
 
     def iter_ffmpeg():
         cmd = [
             settings.ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
             "-i",
             str(path),
+            "-map",
+            "0:a:0",
+            "-vn",
             "-f",
             "mp3",
             "-acodec",
@@ -96,7 +110,7 @@ def _transcode_flac_to_mp3_stream(path: Path) -> StreamingResponse:
             "2",
             "pipe:1",
         ]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             assert proc.stdout is not None
             while True:
@@ -105,6 +119,10 @@ def _transcode_flac_to_mp3_stream(path: Path) -> StreamingResponse:
                     break
                 yield chunk
         finally:
+            if proc.stderr:
+                err = proc.stderr.read().decode("utf-8", errors="ignore")
+                if err.strip():
+                    logger.warning("ffmpeg flac→mp3: %s", err.strip()[:500])
             proc.kill()
             proc.wait()
 
@@ -129,10 +147,12 @@ def stream_track(db: Session, user_id: int, track_id: int, request: Request) -> 
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Audio file missing on disk")
 
+    force_mp3 = request.query_params.get("transcode") == "mp3"
     accept = request.headers.get("accept")
+    ua = request.headers.get("user-agent")
     range_header = request.headers.get("range")
 
-    if track.format == AudioFormat.FLAC and not _client_supports_flac(accept):
+    if track.format == AudioFormat.FLAC and (force_mp3 or not _client_supports_flac(accept, ua)):
         return _transcode_flac_to_mp3_stream(path)
 
     content_type = "audio/mpeg" if track.format == AudioFormat.MP3 else "audio/flac"
