@@ -1,9 +1,10 @@
 function getConfig() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(["apiBase", "accessToken"], (data) => {
+    chrome.storage.sync.get(["apiBase", "accessToken", "webBase"], (data) => {
       resolve({
         apiBase: data.apiBase || "http://localhost:8000",
         accessToken: data.accessToken || "",
+        webBase: data.webBase || "http://localhost:3000",
       });
     });
   });
@@ -151,7 +152,17 @@ async function submitDownload(backdrop, url) {
             : res.data?.detail || `HTTP ${res.status}`;
       throw new Error(msg || "Failed");
     }
-    status.textContent = `Queued (task ${res.data.task_id})`;
+    status.textContent = `Queued — open Downloads in the web app to watch progress (job ${res.data.job_id || res.data.task_id})`;
+    status.style.color = "#1db954";
+    if (cfg.webBase) {
+      const link = document.createElement("a");
+      link.href = `${String(cfg.webBase).replace(/\/$/, "")}/downloads`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Open Downloads";
+      link.style.cssText = "display:block;margin-top:8px;color:#1db954";
+      status.after(link);
+    }
   } catch (e) {
     status.textContent = e.message || "Error";
     status.style.color = "#f87171";

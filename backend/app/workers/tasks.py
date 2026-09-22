@@ -1,6 +1,5 @@
 """Async download, Spotify sync, and quality upgrade tasks."""
 
-import asyncio
 import logging
 import shutil
 from pathlib import Path
@@ -8,10 +7,12 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.models.download_job import DownloadJob, JobStatus
 from app.models.track import AudioFormat, Track, TrackSource
 from app.models.user import User
+from app.services.events import publish_user_event
+from app.services.job_progress import update_job
 from app.services.library import get_or_link_track
-from app.websocket.manager import ws_manager
 from app.workers.celery_app import celery_app
 from app.workers.download_util import download_youtube_audio, extract_youtube_id, persist_download
 from app.workers.spotify_auth import ensure_spotify_access_token
@@ -20,10 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _notify(user_id: int, event: str, data: dict) -> None:
-    try:
-        asyncio.run(ws_manager.send_to_user(user_id, event, data))
-    except Exception as exc:
-        logger.debug("WS notify failed: %s", exc)
+    publish_user_event(user_id, event, data)
 
 
 @celery_app.task(name="app.workers.tasks.download_youtube_track", bind=True, max_retries=3)
@@ -36,10 +34,36 @@ def download_youtube_track(
     audio_format: str,
     playlist_id: int | None,
     add_to_liked: bool,
+    job_id: int | None = None,
 ):
     db = SessionLocal()
     tmp_dir = None
     try:
+        if job_id is None:
+            job = DownloadJob(
+                user_id=user_id,
+                celery_task_id=self.request.id,
+                url=url,
+                title=title,
+                artist=artist,
+                audio_format=audio_format,
+                status=JobStatus.QUEUED,
+                progress=0,
+                stage="Queued",
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            job_id = job.id
+        else:
+            job = db.get(DownloadJob, job_id)
+            if job and not job.celery_task_id:
+                job.celery_task_id = self.request.id
+                db.add(job)
+                db.commit()
+
+        update_job(db, job_id, status=JobStatus.RUNNING, progress=5, stage="Checking library…")
+
         video_id = extract_youtube_id(url)
         if not video_id:
             raise ValueError("Invalid YouTube URL")
@@ -47,6 +71,7 @@ def download_youtube_track(
         source_key = f"youtube:{video_id}"
         existing = db.scalar(select(Track).where(Track.source_key == source_key))
         if existing:
+            update_job(db, job_id, progress=80, stage="Already on server — linking to your library…")
             get_or_link_track(
                 db,
                 user_id,
@@ -55,11 +80,41 @@ def download_youtube_track(
                 add_to_liked=add_to_liked,
             )
             db.commit()
-            _notify(user_id, "download_complete", {"track_id": existing.id, "deduplicated": True})
-            return {"track_id": existing.id, "deduplicated": True}
+            update_job(
+                db,
+                job_id,
+                status=JobStatus.COMPLETED,
+                progress=100,
+                stage="Done (shared existing file)",
+                track_id=existing.id,
+                title=existing.title,
+                artist=existing.artist,
+            )
+            _notify(
+                user_id,
+                "download_complete",
+                {"track_id": existing.id, "job_id": job_id, "deduplicated": True},
+            )
+            return {"track_id": existing.id, "deduplicated": True, "job_id": job_id}
 
+        update_job(
+            db,
+            job_id,
+            progress=15,
+            stage="Downloading from YouTube (this can take a minute)…",
+            title=title,
+            artist=artist,
+        )
         meta, audio_path, thumb = download_youtube_audio(url, audio_format, title, artist)
         tmp_dir = audio_path.parent
+        update_job(
+            db,
+            job_id,
+            progress=70,
+            stage="Saving file and album art…",
+            title=meta.get("title") or title,
+            artist=meta.get("artist") or artist,
+        )
         (
             source_key,
             relative,
@@ -84,14 +139,37 @@ def download_youtube_track(
         )
         db.add(track)
         db.flush()
+        update_job(db, job_id, progress=90, stage="Adding to your library…")
         get_or_link_track(db, user_id, track, playlist_id=playlist_id, add_to_liked=add_to_liked)
         db.commit()
-        _notify(user_id, "download_complete", {"track_id": track.id, "deduplicated": False})
-        return {"track_id": track.id}
+        update_job(
+            db,
+            job_id,
+            status=JobStatus.COMPLETED,
+            progress=100,
+            stage="Download complete",
+            track_id=track.id,
+            title=track.title,
+            artist=track.artist,
+        )
+        _notify(user_id, "download_complete", {"track_id": track.id, "job_id": job_id, "deduplicated": False})
+        return {"track_id": track.id, "job_id": job_id}
     except Exception as exc:
         db.rollback()
         logger.exception("download_youtube_track failed")
-        _notify(user_id, "download_failed", {"error": str(exc), "url": url})
+        if job_id:
+            try:
+                update_job(
+                    db,
+                    job_id,
+                    status=JobStatus.FAILED,
+                    progress=0,
+                    stage="Failed — will retry if attempts remain",
+                    error=str(exc),
+                )
+            except Exception:
+                pass
+        _notify(user_id, "download_failed", {"error": str(exc), "url": url, "job_id": job_id})
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
     finally:
         db.close()
@@ -229,7 +307,20 @@ def sync_spotify_for_user(user_id: int):
             search_q = f"{item['artist']} {item['title']}"
             yt_url = _search_youtube_for_query(search_q)
             if yt_url:
-                download_youtube_track.delay(
+                job = DownloadJob(
+                    user_id=user_id,
+                    url=yt_url,
+                    title=item["title"],
+                    artist=item["artist"],
+                    audio_format="mp3",
+                    status=JobStatus.QUEUED,
+                    progress=0,
+                    stage="Queued from Spotify sync",
+                )
+                db.add(job)
+                db.commit()
+                db.refresh(job)
+                task = download_youtube_track.delay(
                     user_id=user_id,
                     url=yt_url,
                     title=item["title"],
@@ -237,7 +328,11 @@ def sync_spotify_for_user(user_id: int):
                     audio_format="mp3",
                     playlist_id=None,
                     add_to_liked=True,
+                    job_id=job.id,
                 )
+                job.celery_task_id = task.id
+                db.add(job)
+                db.commit()
         _notify(user_id, "spotify_sync", {"queued": len(missing[:20])})
     finally:
         db.close()

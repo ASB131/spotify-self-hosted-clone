@@ -28,7 +28,11 @@ export function useWebSocket(onEvent: (event: string, data: Record<string, unkno
 
 export function WebSocketBridge({ onRefresh }: { onRefresh: () => void }) {
   useWebSocket((event) => {
-    if (["download_complete", "download_failed", "spotify_sync", "upgrade_complete"].includes(event)) {
+    if (
+      ["download_complete", "download_failed", "download_progress", "spotify_sync", "upgrade_complete"].includes(
+        event,
+      )
+    ) {
       onRefresh();
     }
   });

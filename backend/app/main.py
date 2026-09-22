@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+import asyncio
 import logging
 import re
 
@@ -12,6 +13,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.v1 import api_router
 from app.config import get_settings
+from app.services.events import start_event_listener
+from app.websocket.manager import ws_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,6 +37,17 @@ fastapi_app.add_middleware(
 fastapi_app.include_router(api_router)
 
 
+@fastapi_app.on_event("startup")
+async def on_startup() -> None:
+    loop = asyncio.get_running_loop()
+
+    def forward(user_id: int, event: str, data: dict) -> None:
+        asyncio.run_coroutine_threadsafe(ws_manager.send_to_user(user_id, event, data), loop)
+
+    start_event_listener(forward)
+    logger.info("Redis → WebSocket event relay started")
+
+
 @fastapi_app.get("/health")
 def health():
     return {"status": "ok"}
@@ -45,11 +59,7 @@ def root():
 
 
 class ChromeExtensionCorsASGI:
-    """
-    Chrome content-script fetch often sends Origin: https://www.youtube.com (blocked).
-    Prefer calling the API from the extension service worker. This layer still allows any
-    chrome-extension://* origin so listed/unlisted extension IDs work for options page.
-    """
+    """Allow chrome-extension:// origins; prefer background-worker API calls from the extension."""
 
     _EXT = re.compile(r"^chrome-extension://[a-z]{32}$")
 
@@ -107,5 +117,4 @@ class ChromeExtensionCorsASGI:
         await self.app(scope, receive, send_with_cors if is_ext else send)
 
 
-# Uvicorn loads `app.main:app`
 app = ChromeExtensionCorsASGI(fastapi_app)
