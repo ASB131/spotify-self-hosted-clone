@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { CollectionHero, formatTotalDuration } from "@/components/CollectionHero";
 import { PlaylistEditModal } from "@/components/PlaylistEditModal";
 import { TrackTable } from "@/components/TrackTable";
@@ -64,7 +63,7 @@ export default function PlaylistPage() {
   const arts = tracks.map((t) => t.art_url).filter(Boolean) as string[];
 
   return (
-    <AppShell>
+    <>
       <WebSocketBridge onRefresh={load} />
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {playlist && (
@@ -143,14 +142,18 @@ export default function PlaylistPage() {
           }
         />
       )}
-      <TrackTable tracks={tracks} onChanged={load} emptyMessage="This playlist is empty. Save tracks to it from the extension." />
+      <TrackTable
+        tracks={tracks}
+        onChanged={load}
+        emptyMessage="This playlist is empty. Save tracks to it from the extension."
+      />
       <PlaylistEditModal
         playlist={editing ? playlist : null}
         fallbackArts={arts}
         onClose={() => setEditing(false)}
         onSaved={load}
       />
-    </AppShell>
+    </>
   );
 }
 

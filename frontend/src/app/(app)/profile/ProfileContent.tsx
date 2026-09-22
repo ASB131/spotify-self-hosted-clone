@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { api, downloadBlob, getOAuthApiUrl } from "@/lib/api";
 
 type Stats = {
@@ -57,8 +56,8 @@ export default function ProfileContent() {
   }
 
   return (
-    <AppShell>
-      <h2 className="text-2xl font-bold mb-2">Profile</h2>
+    <>
+    <h2 className="text-2xl font-bold mb-2">Profile</h2>
       <Link href="/setup-guide" className="text-sm text-spotify underline mb-4 inline-block">
         Open full setup guide →
       </Link>
@@ -117,7 +116,7 @@ export default function ProfileContent() {
           </a>
         )}
       </section>
-    </AppShell>
+    </>
   );
 }
 

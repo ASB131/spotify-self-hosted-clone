@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { useWebSocket } from "@/lib/ws";
 
@@ -76,8 +75,8 @@ export default function DownloadsPage() {
   }
 
   return (
-    <AppShell>
-      <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
+    <>
+    <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
         <h1 className="text-2xl font-bold">Downloads</h1>
         <div className="flex items-center gap-3">
           <span className={`text-xs ${live ? "text-spotify" : "text-muted"}`}>
@@ -146,6 +145,6 @@ export default function DownloadsPage() {
       <button type="button" onClick={load} className="mt-6 text-sm text-muted underline">
         Refresh now
       </button>
-    </AppShell>
+    </>
   );
 }

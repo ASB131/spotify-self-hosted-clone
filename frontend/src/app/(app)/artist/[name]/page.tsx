@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { CollectionHero, formatTotalDuration } from "@/components/CollectionHero";
 import { PlaylistGrid } from "@/components/PlaylistGrid";
 import { TrackTable } from "@/components/TrackTable";
@@ -61,8 +60,8 @@ export default function ArtistPage() {
   }, [data]);
 
   return (
-    <AppShell>
-      <WebSocketBridge onRefresh={load} />
+    <>
+    <WebSocketBridge onRefresh={load} />
       {error && (
         <p className="text-sm text-red-400 mb-4">
           {error}{" "}
@@ -88,6 +87,6 @@ export default function ArtistPage() {
           <PlaylistGrid playlists={data.playlists} emptyMessage="Not in any playlists yet." />
         </>
       )}
-    </AppShell>
+    </>
   );
 }

@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { TrackTable } from "@/components/TrackTable";
 import { api, type Track } from "@/lib/api";
 
@@ -74,10 +73,8 @@ function SearchInner() {
 
 export default function SearchPage() {
   return (
-    <AppShell>
-      <Suspense fallback={<p className="text-muted text-sm">Loading search…</p>}>
+    <Suspense fallback={<p className="text-muted text-sm">Loading search…</p>}>
         <SearchInner />
       </Suspense>
-    </AppShell>
   );
 }

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { api, getApiUrl, getOAuthApiUrl } from "@/lib/api";
 
 type ServerSetup = {
@@ -62,7 +61,7 @@ export default function SetupGuideContent() {
   }
 
   return (
-    <AppShell>
+    <>
       <h1 className="text-2xl font-bold mb-2">Setup guide</h1>
       <p className="text-muted text-sm mb-6 max-w-2xl">
         Step-by-step configuration for downloads, the Chrome extension, and Spotify library sync. Server-level options
@@ -161,6 +160,6 @@ export default function SetupGuideContent() {
           Create invite codes under <Link href="/admin" className="text-spotify underline">Admin</Link>.
         </p>
       </section>
-    </AppShell>
+    </>
   );
 }

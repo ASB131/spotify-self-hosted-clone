@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { PlaylistGrid } from "@/components/PlaylistGrid";
 import { TrackTable } from "@/components/TrackTable";
 import { api, type Playlist, type Track } from "@/lib/api";
@@ -36,12 +35,12 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <AppShell>
-      <WebSocketBridge onRefresh={load} />
+    <>
+    <WebSocketBridge onRefresh={load} />
       <h2 className="text-2xl font-bold mb-4">Playlists</h2>
       <PlaylistGrid playlists={playlists} emptyMessage="Create a playlist from Your Library." />
       <h2 className="text-2xl font-bold mt-10 mb-4">Recently added</h2>
       <TrackTable tracks={tracks.slice(0, 20)} emptyMessage="Save a track from the extension to get started." />
-    </AppShell>
+    </>
   );
 }

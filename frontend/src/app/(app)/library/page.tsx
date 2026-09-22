@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
 import { PlaylistGrid } from "@/components/PlaylistGrid";
 import { TrackTable } from "@/components/TrackTable";
 import { api, type Playlist, type Track } from "@/lib/api";
@@ -33,8 +32,8 @@ export default function LibraryPage() {
   }
 
   return (
-    <AppShell>
-      <WebSocketBridge onRefresh={load} />
+    <>
+    <WebSocketBridge onRefresh={load} />
       <h2 className="text-2xl font-bold mb-2">Your Library</h2>
       <p className="text-sm text-muted mb-6">
         Use the sidebar to open playlists, filter artists, or create a playlist with +.
@@ -45,6 +44,6 @@ export default function LibraryPage() {
 
       <h3 className="text-lg font-semibold mt-10 mb-3">All songs</h3>
       <TrackTable tracks={tracks} onChanged={load} onUpgrade={upgrade} emptyMessage="Your library is empty." />
-    </AppShell>
+    </>
   );
 }

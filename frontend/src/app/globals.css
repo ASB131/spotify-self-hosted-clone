@@ -41,3 +41,50 @@ body {
 *::-webkit-scrollbar-thumb:hover {
   background: #ffffff80;
 }
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.player-bar {
+  animation: fade-up 0.35s ease-out;
+}
+
+a,
+button {
+  transition: color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .player-bar {
+    animation: none;
+  }
+
+  a,
+  button {
+    transition: none;
+  }
+}

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
+import { getSharedAudio } from "@/lib/playerAudio";
 import { artUrl } from "@/lib/api";
 import { ArtistLinks } from "@/lib/artists";
 
@@ -32,30 +33,55 @@ export function AudioPlayerBar() {
     seek,
     bindAudio,
     onEnded,
+    hydrate,
+    persist,
   } = usePlayerStore();
 
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    const audio = new Audio();
-    audio.volume = usePlayerStore.getState().volume;
+    const audio = getSharedAudio();
+    if (!audio) return;
     bindAudio(audio);
-    const onTime = () => setProgress(audio.currentTime);
+    hydrate();
+
+    const onTime = () => {
+      setProgress(audio.currentTime);
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+      persistTimer.current = setTimeout(() => persist(), 1500);
+    };
     const onMeta = () => setDuration(audio.duration || 0);
     const onEnd = () => onEnded();
+    const onPlay = () => usePlayerStore.setState({ isPlaying: true });
+    const onPause = () => usePlayerStore.setState({ isPlaying: false });
+
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onMeta);
     audio.addEventListener("ended", onEnd);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+
+    const onUnload = () => persist();
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") persist();
+    });
+
     return () => {
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("ended", onEnd);
-      audio.pause();
-      bindAudio(null);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      window.removeEventListener("beforeunload", onUnload);
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+      // Do NOT pause or destroy shared audio — navigation must keep playing
     };
-  }, [bindAudio, setDuration, setProgress, onEnded]);
+  }, [bindAudio, hydrate, persist, setDuration, setProgress, onEnded]);
 
   if (!current) {
     return (
-      <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0">
+      <footer className="h-[72px] rounded-lg bg-panel px-4 flex items-center text-muted text-sm shrink-0 player-bar">
         Select a track to play
       </footer>
     );
@@ -65,12 +91,11 @@ export function AudioPlayerBar() {
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
   return (
-    <footer className="h-[90px] rounded-lg bg-panel px-3 grid grid-cols-[1fr_minmax(280px,40%)_1fr] items-center gap-3 shrink-0">
-      {/* Now playing */}
+    <footer className="h-[90px] rounded-lg bg-panel px-3 grid grid-cols-[1fr_minmax(280px,40%)_1fr] items-center gap-3 shrink-0 player-bar">
       <div className="flex items-center gap-3 min-w-0">
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="h-14 w-14 rounded-sm object-cover shrink-0" />
+          <img src={cover} alt="" className="h-14 w-14 rounded-sm object-cover shrink-0 transition-transform duration-300 hover:scale-[1.02]" />
         ) : (
           <div className="h-14 w-14 rounded-sm bg-white/10 shrink-0" />
         )}
@@ -80,36 +105,35 @@ export function AudioPlayerBar() {
         </div>
       </div>
 
-      {/* Transport */}
       <div className="flex flex-col items-center gap-1.5 min-w-0">
         <div className="flex items-center gap-4">
           <button
             type="button"
             onClick={toggleShuffle}
-            className={shuffle ? "text-spotify" : "text-muted hover:text-white"}
+            className={`transition-colors ${shuffle ? "text-spotify" : "text-muted hover:text-white"}`}
             aria-label="Shuffle"
             aria-pressed={shuffle}
           >
             <IconShuffle />
           </button>
-          <button type="button" onClick={prev} className="text-muted hover:text-white" aria-label="Previous">
+          <button type="button" onClick={prev} className="text-muted hover:text-white transition-colors" aria-label="Previous">
             <IconPrev />
           </button>
           <button
             type="button"
             onClick={toggle}
-            className="h-8 w-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105"
+            className="h-8 w-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
             aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? <IconPause /> : <IconPlay />}
           </button>
-          <button type="button" onClick={next} className="text-muted hover:text-white" aria-label="Next">
+          <button type="button" onClick={next} className="text-muted hover:text-white transition-colors" aria-label="Next">
             <IconNext />
           </button>
           <button
             type="button"
             onClick={cycleRepeat}
-            className={`relative ${repeat !== "off" ? "text-spotify" : "text-muted hover:text-white"}`}
+            className={`relative transition-colors ${repeat !== "off" ? "text-spotify" : "text-muted hover:text-white"}`}
             aria-label="Repeat"
           >
             <IconRepeat />
@@ -122,7 +146,10 @@ export function AudioPlayerBar() {
           <span className="w-10 text-right">{fmt(progress)}</span>
           <div className="relative flex-1 h-3 flex items-center group">
             <div className="absolute inset-x-0 h-1 rounded-full bg-white/20 overflow-hidden">
-              <div className="h-full bg-white group-hover:bg-spotify" style={{ width: `${pct}%` }} />
+              <div
+                className="h-full bg-white group-hover:bg-spotify transition-[width] duration-75 ease-linear"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <input
               type="range"
@@ -139,7 +166,6 @@ export function AudioPlayerBar() {
         </div>
       </div>
 
-      {/* Volume */}
       <div className="flex justify-end items-center gap-2 min-w-0">
         <IconVolume />
         <input

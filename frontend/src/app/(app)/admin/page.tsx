@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { AdminIntegrations } from "@/components/AdminIntegrations";
-import { AppShell } from "@/components/AppShell";
 import { api } from "@/lib/api";
 
 type UserRow = {
@@ -56,8 +55,8 @@ export default function AdminPage() {
   }
 
   return (
-    <AppShell>
-      <h2 className="text-2xl font-bold mb-4">Admin</h2>
+    <>
+    <h2 className="text-2xl font-bold mb-4">Admin</h2>
       <AdminIntegrations />
       <section className="mb-8">
         <div className="flex items-center justify-between mb-2">
@@ -106,6 +105,6 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
-    </AppShell>
+    </>
   );
 }
