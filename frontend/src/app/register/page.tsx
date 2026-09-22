@@ -1,13 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { fetchSetupStatus } from "@/lib/setup";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", display_name: "", password: "", invite_code: "" });
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchSetupStatus().then((s) => {
+      if (s.needs_setup) router.replace("/setup");
+    });
+  }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

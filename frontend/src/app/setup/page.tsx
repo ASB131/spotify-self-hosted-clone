@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { fetchSetupStatus } from "@/lib/setup";
 
 export default function SetupPage() {
   const router = useRouter();
@@ -10,6 +11,16 @@ export default function SetupPage() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    fetchSetupStatus()
+      .then((s) => {
+        if (!s.needs_setup) router.replace("/login");
+        else setReady(true);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Server unreachable"));
+  }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,6 +35,14 @@ export default function SetupPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-muted">
+        {error || "Loading…"}
+      </div>
+    );
   }
 
   return (

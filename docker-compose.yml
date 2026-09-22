@@ -35,8 +35,8 @@ services:
   api:
     image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
@@ -63,8 +63,8 @@ services:
   worker:
     image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
@@ -87,8 +87,8 @@ services:
   beat:
     image: ${API_IMAGE:-ghcr.io/asb131/spotify-self-hosted-clone-api:${IMAGE_TAG:-main}}
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:

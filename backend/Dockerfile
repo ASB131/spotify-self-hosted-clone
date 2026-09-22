@@ -6,12 +6,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY alembic.ini .
-COPY alembic ./alembic
-COPY app ./app
+COPY backend/alembic.ini .
+COPY backend/alembic ./alembic
+COPY backend/app ./app
+COPY extension ./extension
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app

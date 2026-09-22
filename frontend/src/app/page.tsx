@@ -7,6 +7,8 @@ import { api, type Track } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { WebSocketBridge } from "@/lib/ws";
 
+import { fetchSetupStatus } from "@/lib/setup";
+
 export default function HomePage() {
   const router = useRouter();
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -19,12 +21,15 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    api<{ needs_setup: boolean }>("/api/v1/auth/setup-status")
+    fetchSetupStatus()
       .then((s) => {
-        if (s.needs_setup) router.replace("/setup");
-        else load();
+        if (s.needs_setup) {
+          router.replace("/setup");
+          return;
+        }
+        load();
       })
-      .catch(() => router.push("/login"));
+      .catch(() => router.replace("/login"));
   }, [router]);
 
   return (

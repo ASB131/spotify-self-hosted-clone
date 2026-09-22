@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     spotify_redirect_uri: str = "http://localhost:8000/api/v1/spotify/callback"
 
     default_storage_quota_bytes: int = 10 * 1024 * 1024 * 1024
+    extension_dir: str = "/app/extension"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

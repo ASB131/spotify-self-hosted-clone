@@ -16,6 +16,39 @@ docker compose up -d --build
 5. Open `http://localhost:3000` (or your `WEB_PORT`) and complete **Admin setup**.
 6. Create invite codes in **Admin** for additional users.
 
+### Admin setup vs login
+
+- **First visit:** If no user exists in the database, you are sent to **`/setup`** to create the admin account.
+- **Already configured:** If you ran setup before (Postgres data still on disk), you will see **Login** instead. Use the admin email/password you created earlier.
+- **Run setup again:** Stop the stack and remove the database volume, then start fresh:
+
+```bash
+docker compose down
+# Remove Postgres data (Windows example path from .env)
+rm -rf ./data/postgres
+docker compose up -d
+```
+
+## Do I need Lidarr, Prowlarr, or other *arr apps?
+
+**No.** Resonance is self-contained for its current features:
+
+| Need | Built into Resonance |
+|------|----------------------|
+| Download audio from YouTube | Celery + **yt-dlp** worker |
+| Spotify liked-songs sync | **Spotipy** + YouTube search (optional OAuth) |
+| Library, playlists, streaming | Postgres + FastAPI + Next.js |
+| Art / metadata | yt-dlp + Mutagen in workers |
+
+**Lidarr**, **Prowlarr**, **Sonarr**, and **Radarr** are part of the *arr* ecosystem for automating **torrent/Usenet** downloads. This project does **not** integrate with them today. You only need those if you separately want to acquire files via indexers and then import them yourself—they are not required to run `docker compose up`.
+
+Optional companions (not wired in):
+
+- **Navidrome** — separate music *server* (Subsonic API); Resonance replaces that role with its own UI and library.
+- **Lidarr + Prowlarr** — only if you want automated torrent/Usenet acquisition outside YouTube; would need custom integration to import into `/music`.
+
+To run another stack **alongside** Resonance, use different host ports in each project’s `.env` (e.g. Lidarr on `8686`) and separate Docker networks/volumes so they do not conflict with `POSTGRES_PORT`, `REDIS_PORT`, etc. here.
+
 ## Services
 
 | Service | Default port | Purpose |
@@ -37,7 +70,9 @@ All bind ports and host directories are driven by environment variables in `.env
 
 ## Extension
 
-Load `extension/` as an unpacked extension in Chrome. Set API URL and JWT in extension options. Add your extension origin to `CORS_ORIGINS`.
+Use **Profile → Add Chrome extension** in the web app to download a zip and open install steps. Chrome requires a one-time **Load unpacked** in `chrome://extensions` (Developer mode)—websites cannot install extensions silently without the Chrome Web Store.
+
+Set API URL and JWT in extension options. Add your extension origin to `CORS_ORIGINS`.
 
 ## Security
 
