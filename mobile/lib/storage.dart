@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -73,19 +74,21 @@ class OfflineStore {
   OfflineStore();
 
   Directory? _root;
+  Directory? _artRoot;
   final Map<int, String> _index = {};
 
   Future<void> init() async {
     final docs = await getApplicationDocumentsDirectory();
     _root = Directory(p.join(docs.path, 'offline_tracks'));
+    _artRoot = Directory(p.join(docs.path, 'offline_art'));
     if (!await _root!.exists()) await _root!.create(recursive: true);
+    if (!await _artRoot!.exists()) await _artRoot!.create(recursive: true);
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('offline_index_v1');
     if (raw != null) {
       final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       map.forEach((k, v) => _index[int.parse(k)] = v as String);
     }
-    // Drop index entries whose files vanished.
     final missing = <int>[];
     _index.forEach((id, path) {
       if (!File(path).existsSync()) missing.add(id);
@@ -114,6 +117,35 @@ class OfflineStore {
 
   Set<int> get downloadedIds => _index.keys.toSet();
 
+  int get downloadedCount => downloadedIds.length;
+
+  Future<int> offlineBytesUsed() async {
+    await init();
+    var total = 0;
+    for (final path in _index.values) {
+      final f = File(path);
+      if (await f.exists()) total += await f.length();
+    }
+    if (_artRoot != null && await _artRoot!.exists()) {
+      await for (final ent in _artRoot!.list(recursive: true)) {
+        if (ent is File) total += await ent.length();
+      }
+    }
+    return total;
+  }
+
+  File? artFile(int trackId) {
+    if (_artRoot == null) return null;
+    final f = File(p.join(_artRoot!.path, '$trackId.jpg'));
+    return f.existsSync() ? f : null;
+  }
+
+  Future<void> saveArtBytes(int trackId, Uint8List bytes) async {
+    await init();
+    final f = File(p.join(_artRoot!.path, '$trackId.jpg'));
+    await f.writeAsBytes(bytes, flush: true);
+  }
+
   Future<String> saveDownloadStream({
     required Track track,
     required Stream<List<int>> stream,
@@ -133,19 +165,22 @@ class OfflineStore {
     return file.path;
   }
 
-  Future<String> saveDownload({
-    required Track track,
-    required List<int> bytes,
-  }) async {
-    return saveDownloadStream(track: track, stream: Stream.value(bytes));
-  }
-
   Future<void> remove(int trackId) async {
     final path = _index.remove(trackId);
     await _persistIndex();
     if (path != null) {
       final f = File(path);
       if (await f.exists()) await f.delete();
+    }
+    final art = File(p.join(_artRoot?.path ?? '', '$trackId.jpg'));
+    if (await art.exists()) await art.delete();
+  }
+
+  Future<void> clearAllDownloads() async {
+    await init();
+    final ids = _index.keys.toList();
+    for (final id in ids) {
+      await remove(id);
     }
   }
 }

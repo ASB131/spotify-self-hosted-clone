@@ -1,7 +1,7 @@
 name: mix_player
 description: Mix player — self-hosted music on Android
 publish_to: "none"
-version: 2.1.5+7
+version: 2.2.0+8
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -17,7 +17,9 @@ dependencies:
   path_provider: ^2.1.5
   path: ^1.9.0
   just_audio: ^0.9.42
+  just_audio_background: ^0.0.1-beta.17
   audio_session: ^0.1.21
+  audio_service: ^0.18.15
   cached_network_image: ^3.4.1
   connectivity_plus: ^6.1.0
   intl: ^0.19.0
@@ -27,6 +29,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/app_icon.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/app_icon.png
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: assets/app_icon.png

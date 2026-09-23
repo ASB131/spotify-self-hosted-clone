@@ -27,7 +27,11 @@ class AppState extends ChangeNotifier {
   List<Track> tracks = [];
   List<Playlist> playlists = [];
   HomeFeed? home;
+  UserProfile? profile;
+  UserStats? stats;
+  int offlineBytes = 0;
   final Set<int> downloading = {};
+  final Set<String> youtubeQueueing = {};
 
   StreamSubscription? _connSub;
 
@@ -43,15 +47,16 @@ class AppState extends ChangeNotifier {
     final initial = await Connectivity().checkConnectivity();
     online = !initial.every((r) => r == ConnectivityResult.none);
 
-    // Always hydrate from cache first for instant UI / offline.
     tracks = await cache.loadTracks();
     playlists = await cache.loadPlaylists();
     home = await cache.loadHome();
+    offlineBytes = await offline.offlineBytesUsed();
     booting = false;
     notifyListeners();
 
     if (api.isConfigured && online) {
       await refreshLibrary(silent: true);
+      await refreshProfile(silent: true);
     }
   }
 
@@ -70,6 +75,7 @@ class AppState extends ChangeNotifier {
       await api.setServer(serverUrl, allowBadCerts: allowBadCerts);
       await api.login(email, password);
       await refreshLibrary();
+      await refreshProfile();
     } catch (e) {
       error = e.toString();
       rethrow;
@@ -81,6 +87,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> logout() async {
     await api.logout();
+    profile = null;
+    stats = null;
     notifyListeners();
   }
 
@@ -107,14 +115,30 @@ class AppState extends ChangeNotifier {
       await cache.saveHome(h);
       error = null;
     } catch (e) {
-      // Fall back to cache.
       tracks = await cache.loadTracks();
       playlists = await cache.loadPlaylists();
       home = await cache.loadHome();
       if (!silent) error = e.toString();
     } finally {
       busy = false;
+      offlineBytes = await offline.offlineBytesUsed();
       notifyListeners();
+    }
+  }
+
+  Future<void> refreshProfile({bool silent = false}) async {
+    if (!online || !api.isConfigured) return;
+    try {
+      profile = await api.me();
+      stats = await api.myStats();
+      offlineBytes = await offline.offlineBytesUsed();
+      error = null;
+      notifyListeners();
+    } catch (e) {
+      if (!silent) {
+        error = e.toString();
+        notifyListeners();
+      }
     }
   }
 
@@ -147,6 +171,55 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
+  List<ArtistHit> artistsMatching(String q) {
+    final needle = q.trim().toLowerCase();
+    if (needle.length < 2) return [];
+    final map = <String, ArtistHit>{};
+    for (final t in tracks) {
+      for (final part in t.artist.split(RegExp(r'\s*[,&]\s*|\s+feat\.?\s+|\s+ft\.?\s+', caseSensitive: false))) {
+        final name = part.trim();
+        if (name.isEmpty) continue;
+        if (!name.toLowerCase().contains(needle)) continue;
+        final key = name.toLowerCase();
+        final prev = map[key];
+        if (prev == null) {
+          map[key] = ArtistHit(name: name, trackCount: 1, artUrl: t.artUrl);
+        } else {
+          map[key] = ArtistHit(
+            name: prev.name,
+            trackCount: prev.trackCount + 1,
+            artUrl: prev.artUrl ?? t.artUrl,
+          );
+        }
+      }
+    }
+    final list = map.values.toList()
+      ..sort((a, b) => b.trackCount.compareTo(a.trackCount));
+    return list;
+  }
+
+  List<Track> tracksByArtist(String name) {
+    final needle = name.toLowerCase();
+    return tracks.where((t) => t.artist.toLowerCase().contains(needle)).toList();
+  }
+
+  Future<List<YoutubeResult>> searchYoutube(String q) async {
+    if (q.trim().length < 2) return [];
+    return api.searchYoutube(q.trim());
+  }
+
+  Future<void> addYoutubeToServer(YoutubeResult item) async {
+    if (youtubeQueueing.contains(item.id)) return;
+    youtubeQueueing.add(item.id);
+    notifyListeners();
+    try {
+      await api.queueYoutubeDownload(item, format: profile?.defaultAudioFormat);
+    } finally {
+      youtubeQueueing.remove(item.id);
+      notifyListeners();
+    }
+  }
+
   bool isDownloaded(int trackId) => offline.isDownloaded(trackId);
 
   Future<void> downloadTrack(Track track) async {
@@ -164,6 +237,11 @@ class AppState extends ChangeNotifier {
         throw ApiException('Download failed (${streamed.statusCode})');
       }
       await offline.saveDownloadStream(track: track, stream: streamed.stream);
+      final art = await api.fetchArtBytes(track.artUrl);
+      if (art != null && art.isNotEmpty) {
+        await offline.saveArtBytes(track.id, art);
+      }
+      offlineBytes = await offline.offlineBytesUsed();
     } finally {
       downloading.remove(track.id);
       notifyListeners();
@@ -172,12 +250,24 @@ class AppState extends ChangeNotifier {
 
   Future<void> removeDownload(int trackId) async {
     await offline.remove(trackId);
+    offlineBytes = await offline.offlineBytesUsed();
+    notifyListeners();
+  }
+
+  Future<void> clearOfflineDownloads() async {
+    await offline.clearAllDownloads();
+    offlineBytes = 0;
     notifyListeners();
   }
 
   Future<void> playTrackInContext(Track track, List<Track> context, {int? playlistId}) async {
     final idx = context.indexWhere((t) => t.id == track.id);
     await player.playTracks(context, startIndex: idx >= 0 ? idx : 0, playlistId: playlistId);
+    notifyListeners();
+  }
+
+  Future<void> addToQueue(Track track) async {
+    await player.addToQueue(track);
     notifyListeners();
   }
 

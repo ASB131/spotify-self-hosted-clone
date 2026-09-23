@@ -37,7 +37,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     return Scaffold(
-      appBar: AppBar(title: Text(widget.playlist.name)),
+      appBar: AppBar(
+        title: Text(widget.playlist.name),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: MixColors.green))
           : RefreshIndicator(
@@ -50,7 +56,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          TrackArt(artUrl: widget.playlist.coverUrl ?? (_tracks.isNotEmpty ? _tracks.first.artUrl : null), size: 120, radius: 8),
+                          TrackArt(
+                            artUrl: widget.playlist.coverUrl ?? (_tracks.isNotEmpty ? _tracks.first.artUrl : null),
+                            trackId: _tracks.isNotEmpty ? _tracks.first.id : null,
+                            size: 120,
+                            radius: 8,
+                          ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(
@@ -96,31 +107,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         return TrackTile(
                           track: t,
                           onTap: () => state.playTrackInContext(t, _tracks, playlistId: widget.playlist.id),
-                          trailing: IconButton(
-                            icon: Icon(
-                              state.isDownloaded(t.id) ? Icons.download_done : Icons.download_outlined,
-                              color: state.isDownloaded(t.id) ? MixColors.green : MixColors.muted,
-                            ),
-                            onPressed: () async {
-                              try {
-                                if (state.isDownloaded(t.id)) {
-                                  await state.removeDownload(t.id);
-                                } else {
-                                  await state.downloadTrack(t);
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                                }
-                              }
-                            },
-                          ),
+                          trailing: OfflineDownloadButton(track: t),
                         );
                       },
                       childCount: _tracks.length,
                     ),
                   ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
                 ],
               ),
             ),

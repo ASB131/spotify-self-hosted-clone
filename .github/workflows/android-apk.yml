@@ -117,6 +117,35 @@ jobs:
           print(fixed)
           PY
 
+          # Display name + media playback foreground service permissions.
+          python3 <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+          text = text.replace('android:label="mix_player"', 'android:label="Mix Player"')
+          text = text.replace("android:label='mix_player'", 'android:label="Mix Player"')
+          perms = [
+              "android.permission.WAKE_LOCK",
+              "android.permission.FOREGROUND_SERVICE",
+              "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+          ]
+          for perm in perms:
+              needle = f'<uses-permission android:name="{perm}"/>'
+              if needle not in text and f'android:name="{perm}"' not in text:
+                  # Prefer inserting after INTERNET if present, else after <manifest ...>
+                  anchor = '<uses-permission android:name="android.permission.INTERNET"/>'
+                  if anchor in text:
+                      text = text.replace(anchor, anchor + "\n    " + needle, 1)
+                  else:
+                      gt = text.find(">")
+                      if gt < 0:
+                          raise SystemExit("malformed manifest")
+                      text = text[: gt + 1] + "\n    " + needle + text[gt + 1 :]
+          manifest.write_text(text, encoding="utf-8")
+          print("--- branding / media perms ---")
+          print("\n".join(text.splitlines()[:55]))
+          PY
+
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle.kts || true
           fi
@@ -127,6 +156,9 @@ jobs:
 
       - name: Pub get
         run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
 
       - name: Build release APK
         run: flutter build apk --release

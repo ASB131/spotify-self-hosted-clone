@@ -6,10 +6,12 @@ Native Android client for Mix player. Spotify-style mobile layout, streams when 
 
 - Sign in with your Mix player server URL + account (public HTTPS domain or LAN)
 - Optional “Trust server certificate” for self-hosted TLS quirks
-- Home, Search, Library, and full-screen player
-- Stream audio when online (same API as the web client; works through the web `/api` proxy)
-- Download tracks to the device for offline play
-- Cache playlists/tracks/home metadata locally (not media files)
+- Home, Search (Songs / Artists / YouTube), Library, Profile
+- Lock-screen and notification media controls
+- Stream audio when online; download tracks for offline play
+- Swipe a song right to add it to the queue
+- Profile: server stats, offline storage, clear downloads, sign out
+- App icon uses the site favicon; launcher name is **Mix Player**
 
 ## Build (CI)
 
@@ -22,6 +24,7 @@ Release APKs **must** include `android.permission.INTERNET` (Flutter’s templat
 ```bash
 cd mobile
 flutter pub get
+dart run flutter_launcher_icons
 flutter create --platforms=android --org=com.mixplayer --project-name=mix_player .
 # allow cleartext HTTP for LAN servers (already patched in CI):
 # android/app/src/main/AndroidManifest.xml → android:usesCleartextTraffic="true"

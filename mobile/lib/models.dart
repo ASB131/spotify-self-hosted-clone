@@ -142,3 +142,98 @@ class HomeFeed {
             .toList(),
       };
 }
+
+class YoutubeResult {
+  YoutubeResult({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.url,
+    this.channel = '',
+    this.durationSeconds,
+    this.thumbnailUrl,
+  });
+
+  final String id;
+  final String title;
+  final String artist;
+  final String url;
+  final String channel;
+  final int? durationSeconds;
+  final String? thumbnailUrl;
+
+  factory YoutubeResult.fromJson(Map<String, dynamic> j) => YoutubeResult(
+        id: (j['id'] as String?) ?? '',
+        title: (j['title'] as String?) ?? 'Unknown',
+        artist: (j['artist'] as String?) ?? (j['channel'] as String?) ?? 'YouTube',
+        url: (j['url'] as String?) ?? '',
+        channel: (j['channel'] as String?) ?? '',
+        durationSeconds: j['duration_seconds'] as int?,
+        thumbnailUrl: j['thumbnail_url'] as String?,
+      );
+}
+
+class ArtistHit {
+  ArtistHit({required this.name, required this.trackCount, this.artUrl});
+  final String name;
+  final int trackCount;
+  final String? artUrl;
+}
+
+class UserProfile {
+  UserProfile({
+    required this.id,
+    required this.email,
+    required this.displayName,
+    required this.role,
+    required this.storageUsedBytes,
+    required this.storageQuotaBytes,
+    this.defaultAudioFormat = 'mp3',
+  });
+
+  final int id;
+  final String email;
+  final String displayName;
+  final String role;
+  final int storageUsedBytes;
+  final int storageQuotaBytes;
+  final String defaultAudioFormat;
+
+  factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
+        id: j['id'] as int,
+        email: (j['email'] as String?) ?? '',
+        displayName: (j['display_name'] as String?) ?? 'User',
+        role: (j['role'] as String?) ?? 'user',
+        storageUsedBytes: (j['storage_used_bytes'] as num?)?.toInt() ?? 0,
+        storageQuotaBytes: (j['storage_quota_bytes'] as num?)?.toInt() ?? 0,
+        defaultAudioFormat: (j['default_audio_format'] as String?) ?? 'mp3',
+      );
+}
+
+class UserStats {
+  UserStats({
+    required this.tracksCount,
+    required this.playlistsCount,
+    required this.storageUsedBytes,
+    required this.storageQuotaBytes,
+  });
+
+  final int tracksCount;
+  final int playlistsCount;
+  final int storageUsedBytes;
+  final int storageQuotaBytes;
+
+  factory UserStats.fromJson(Map<String, dynamic> j) => UserStats(
+        tracksCount: (j['tracks_count'] as num?)?.toInt() ?? 0,
+        playlistsCount: (j['playlists_count'] as num?)?.toInt() ?? 0,
+        storageUsedBytes: (j['storage_used_bytes'] as num?)?.toInt() ?? 0,
+        storageQuotaBytes: (j['storage_quota_bytes'] as num?)?.toInt() ?? 0,
+      );
+}
+
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}

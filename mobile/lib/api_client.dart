@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'http_overrides.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -37,6 +39,7 @@ class ApiClient {
     final prefs = await SharedPreferences.getInstance();
     _baseUrl = prefs.getString('api_base') ?? '';
     _allowBadCerts = prefs.getBool('allow_bad_certs') ?? false;
+    mixHttpOverrides.allowBadCerts = _allowBadCerts;
     _rebuildClient();
     _token = prefs.getString('access_token');
     if (_token == null || _token!.isEmpty) {
@@ -48,6 +51,7 @@ class ApiClient {
 
   void _rebuildClient() {
     _client.close();
+    mixHttpOverrides.allowBadCerts = _allowBadCerts;
     final io = HttpClient();
     io.connectionTimeout = const Duration(seconds: 20);
     io.idleTimeout = const Duration(seconds: 30);
@@ -66,15 +70,10 @@ class ApiClient {
         RegExp(r'^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$').hasMatch(h);
   }
 
-  /// Normalize user input into an absolute API/web origin.
-  ///
-  /// - Public hostnames always use https (even if the user typed http://).
-  /// - Private LAN IPs default to http and, with no port, use :8010 (API).
   static String normalizeServerUrl(String raw) {
     var s = raw.trim();
     if (s.isEmpty) throw ApiException('Enter your Mix player server URL');
 
-    // Strip common pasted suffixes.
     s = s.replaceAll(RegExp(r'/+$'), '');
     s = s.replaceAll(RegExp(r'/(login|setup|extension).*$', caseSensitive: false), '');
     s = s.replaceAll(RegExp(r'/api(/v1)?$', caseSensitive: false), '');
@@ -90,15 +89,12 @@ class ApiClient {
     }
 
     final private = _isPrivateHost(uri.host);
-
-    // Public domains: never use plain http (port 80 is usually closed / wrong).
     if (!private && uri.scheme == 'http') {
       uri = uri.replace(scheme: 'https');
     }
 
-    // LAN bare IP with no port → API publish port used by this stack.
     var port = uri.hasPort ? uri.port : null;
-    if (private && port == null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    if (private && port == null) {
       port = 8010;
     }
 
@@ -170,7 +166,6 @@ class ApiClient {
         throw ApiException(_reachError(e, sslHint: true));
       }
     } on SocketException catch (e) {
-      // Android sometimes surfaces cert failures as SocketException.
       final msg = e.message.toLowerCase();
       final looksSsl = msg.contains('certificate') ||
           msg.contains('handshake') ||
@@ -320,6 +315,20 @@ class ApiClient {
 
   String downloadUrl(int trackId) => '$_baseUrl/api/v1/tracks/$trackId/stream?download=1';
 
+  Future<Uint8List?> fetchArtBytes(String? artUrl) async {
+    final url = absoluteUrl(artUrl);
+    if (url.isEmpty) return null;
+    try {
+      final res = await _client
+          .get(Uri.parse(url), headers: authHeaders())
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode >= 400) return null;
+      return res.bodyBytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<Track>> listTracks() async {
     final data = await _get('/api/v1/tracks') as List<dynamic>;
     return data.map((e) => Track.fromJson(Map<String, dynamic>.from(e as Map))).toList();
@@ -344,6 +353,35 @@ class ApiClient {
     final data = await _get('/api/v1/tracks/search?q=${Uri.encodeQueryComponent(q)}') as Map<String, dynamic>;
     final tracks = data['tracks'] as List? ?? const [];
     return tracks.map((e) => Track.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<List<YoutubeResult>> searchYoutube(String q, {int offset = 0}) async {
+    final data = await _get(
+      '/api/v1/youtube/search?q=${Uri.encodeQueryComponent(q)}&limit=12&offset=$offset&exclude_owned=true',
+    ) as Map<String, dynamic>;
+    final results = data['results'] as List? ?? const [];
+    return results.map((e) => YoutubeResult.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<int> queueYoutubeDownload(YoutubeResult item, {String? format}) async {
+    final data = await _post('/api/v1/downloads', {
+      'url': item.url,
+      'title': item.title,
+      'artist': item.artist,
+      if (format != null) 'format': format,
+      'added_via': 'mobile',
+    }) as Map<String, dynamic>;
+    return (data['job_id'] as num?)?.toInt() ?? (data['id'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<UserProfile> me() async {
+    final data = await _get('/api/v1/auth/me') as Map<String, dynamic>;
+    return UserProfile.fromJson(data);
+  }
+
+  Future<UserStats> myStats() async {
+    final data = await _get('/api/v1/auth/me/stats') as Map<String, dynamic>;
+    return UserStats.fromJson(data);
   }
 
   Future<void> recordPlay(int trackId, {int? playlistId}) async {

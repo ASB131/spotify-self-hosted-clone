@@ -84,7 +84,7 @@ class HomeScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            TrackArt(artUrl: t.artUrl, size: 120, radius: 6),
+                            TrackArt(artUrl: t.artUrl, trackId: t.id, size: 120, radius: 6),
                             const SizedBox(height: 8),
                             Text(
                               t.title,

@@ -66,25 +66,7 @@ class LibraryScreen extends StatelessWidget {
                       return TrackTile(
                         track: t,
                         onTap: () => state.playTrackInContext(t, state.tracks),
-                        trailing: IconButton(
-                          icon: Icon(
-                            state.isDownloaded(t.id) ? Icons.download_done : Icons.download_outlined,
-                            color: state.isDownloaded(t.id) ? MixColors.green : MixColors.muted,
-                          ),
-                          onPressed: () async {
-                            if (state.isDownloaded(t.id)) {
-                              await state.removeDownload(t.id);
-                            } else {
-                              try {
-                                await state.downloadTrack(t);
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                                }
-                              }
-                            }
-                          },
-                        ),
+                        trailing: OfflineDownloadButton(track: t),
                       );
                     },
                   ),

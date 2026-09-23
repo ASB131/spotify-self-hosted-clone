@@ -26,7 +26,7 @@ class MiniPlayerBar extends StatelessWidget {
             child: Row(
               children: [
                 const SizedBox(width: 8),
-                TrackArt(artUrl: track.artUrl, size: 48),
+                TrackArt(artUrl: track.artUrl, trackId: track.id, size: 48),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -95,7 +95,7 @@ class NowPlayingScreen extends StatelessWidget {
         child: Column(
           children: [
             const Spacer(),
-            TrackArt(artUrl: track.artUrl, size: MediaQuery.of(context).size.width - 48, radius: 12),
+            TrackArt(artUrl: track.artUrl, trackId: track.id, size: MediaQuery.of(context).size.width - 48, radius: 12),
             const Spacer(),
             Align(
               alignment: Alignment.centerLeft,
@@ -188,23 +188,41 @@ class NowPlayingScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                TextButton.icon(
-                  onPressed: () async {
-                    try {
-                      if (offline) {
-                        await state.removeDownload(track.id);
-                      } else {
-                        await state.downloadTrack(track);
+                if (state.downloading.contains(track.id))
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: MixColors.green),
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () async {
+                      try {
+                        if (offline) {
+                          await state.removeDownload(track.id);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Downloading ${track.title}…')),
+                          );
+                          await state.downloadTrack(track);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Downloaded ${track.title}')),
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                        }
                       }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                      }
-                    }
-                  },
-                  icon: Icon(offline ? Icons.download_done : Icons.download_outlined, color: MixColors.green),
-                  label: Text(offline ? 'Downloaded' : 'Download ${track.formatLabel}'),
-                ),
+                    },
+                    icon: Icon(offline ? Icons.download_done : Icons.download_outlined, color: MixColors.green),
+                    label: Text(offline ? 'Downloaded' : 'Download ${track.formatLabel}'),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
