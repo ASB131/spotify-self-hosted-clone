@@ -2,7 +2,7 @@
 
 Self-hosted music library with a Spotify-style web UI, Android app, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks.
 
-**v2.1.1**
+**v2.1.2**
 
 ## Quick start (server: pull images only)
 
@@ -46,7 +46,7 @@ If `docker compose pull` fails with unauthorized, make the GHCR packages **Publi
 
 Install **mix-player.apk** from the [latest GitHub Release](https://github.com/ASB131/spotify-self-hosted-clone/releases) (or Actions → Build Android APK).
 
-- Enter your **public** Mix player URL (e.g. `https://music.example.com`) or LAN API (`http://192.168.x.x:8010`) and account
+- Enter your **public** Mix player URL (e.g. `https://music.example.com`) or LAN IP (`192.168.x.x` → auto-uses `:8010`) / `http://192.168.x.x:8010`
 - Domains default to HTTPS; private IPs default to HTTP
 - If login fails with an SSL error, enable **Trust server certificate** on the login screen
 - Streams when online; download MP3/FLAC to the phone for offline play

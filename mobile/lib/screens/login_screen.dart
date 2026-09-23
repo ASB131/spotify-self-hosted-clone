@@ -16,14 +16,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   String? _localError;
-  bool _trustCert = false;
+  bool _trustCert = true;
 
   @override
   void initState() {
     super.initState();
     final api = context.read<AppState>().api;
     _server.text = api.baseUrl;
-    _trustCert = api.allowBadCerts;
+    // Prefer saved preference; default ON for first-run self-hosted TLS.
+    _trustCert = api.baseUrl.isEmpty ? true : api.allowBadCerts;
   }
 
   @override
@@ -73,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: const InputDecoration(
                 labelText: 'Server URL',
                 hintText: 'https://music.example.com',
-                helperText: 'Public domain or http://192.168.x.x:8010',
+                helperText: 'Public: your domain. LAN: 192.168.x.x (uses :8010) or http://IP:8010',
                 helperMaxLines: 2,
               ),
             ),
@@ -96,7 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Trust server certificate', style: TextStyle(fontSize: 14)),
               subtitle: const Text(
-                'Use if login fails with an SSL/certificate error on your self-hosted domain',
+                'On by default for self-hosted HTTPS. Turn off only if you want strict SSL checks.',
                 style: TextStyle(fontSize: 12, color: MixColors.muted),
               ),
               value: _trustCert,
@@ -131,9 +132,10 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 16),
             const Text(
               'Examples:\n'
-              '• https://music.asb-servers.com  (public — uses the web /api proxy)\n'
-              '• http://192.168.1.177:8010  (LAN API port)\n'
-              'You can omit https:// — it is added automatically for domains.',
+              '• https://music.asb-servers.com\n'
+              '• 192.168.1.177  (auto → http://192.168.1.177:8010)\n'
+              '• http://192.168.1.177:8010  (LAN API)\n'
+              '• http://192.168.1.177:3010  (LAN web /api proxy)',
               style: TextStyle(color: MixColors.muted, fontSize: 12, height: 1.4),
             ),
           ],
