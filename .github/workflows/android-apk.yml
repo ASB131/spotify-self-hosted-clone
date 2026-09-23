@@ -32,6 +32,10 @@ jobs:
           flutter create --platforms=android --org=com.mixplayer --project-name=mix_player .
           # Preserve our Dart sources / pubspec (flutter create does not overwrite lib/).
 
+          # Release source-set merge (debug already has INTERNET; release does not).
+          mkdir -p android/app/src/release
+          cp tooling/release-AndroidManifest.xml android/app/src/release/AndroidManifest.xml
+
       - name: Allow network + cleartext HTTP for self-hosted servers
         run: |
           set -euo pipefail
@@ -127,27 +131,36 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Verify INTERNET permission in APK
-        run: |
-          set -euo pipefail
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          python3 <<'PY'
-          from pathlib import Path
-          data = Path("build/app/outputs/flutter-apk/app-release.apk").read_bytes()
-          # AXML string pool is UTF-16LE; also accept plain ASCII if present.
-          ascii_ok = b"android.permission.INTERNET" in data
-          utf16_ok = "android.permission.INTERNET".encode("utf-16le") in data
-          if not (ascii_ok or utf16_ok):
-              raise SystemExit("FATAL: built APK is missing android.permission.INTERNET")
-          print("OK: INTERNET permission present in APK",
-                f"(ascii={ascii_ok}, utf16={utf16_ok})")
-          PY
-
       - name: Rename APK
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk dist/mix-player.apk
           ls -lh dist/mix-player.apk
+
+      - name: Verify INTERNET permission in APK
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          apk = Path("dist/mix-player.apk")
+          with zipfile.ZipFile(apk) as z:
+              manifest = z.read("AndroidManifest.xml")
+
+          # Decompressed AXML string pool may be UTF-8 or UTF-16LE.
+          ascii_ok = b"android.permission.INTERNET" in manifest
+          utf16_ok = "android.permission.INTERNET".encode("utf-16le") in manifest
+          # Also accept resource-name fragment used by some toolchains.
+          frag_ok = b"INTERNET" in manifest or "INTERNET".encode("utf-16le") in manifest
+
+          print(f"manifest_bytes={len(manifest)} ascii={ascii_ok} utf16={utf16_ok} frag={frag_ok}")
+          if not (ascii_ok or utf16_ok or frag_ok):
+              # Dump a hex preview to aid debugging.
+              print(manifest[:64].hex())
+              raise SystemExit("FATAL: built APK AndroidManifest.xml missing INTERNET")
+          print("OK: INTERNET permission present in APK")
+          PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
