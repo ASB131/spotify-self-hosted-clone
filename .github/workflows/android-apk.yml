@@ -131,12 +131,17 @@ jobs:
         run: |
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-release.apk"
-          # Binary XML still contains the ASCII permission string.
-          if ! strings "$APK" | grep -q "android.permission.INTERNET"; then
-            echo "FATAL: built APK is missing android.permission.INTERNET"
-            exit 1
-          fi
-          echo "OK: INTERNET permission present in APK"
+          python3 <<'PY'
+          from pathlib import Path
+          data = Path("build/app/outputs/flutter-apk/app-release.apk").read_bytes()
+          # AXML string pool is UTF-16LE; also accept plain ASCII if present.
+          ascii_ok = b"android.permission.INTERNET" in data
+          utf16_ok = "android.permission.INTERNET".encode("utf-16le") in data
+          if not (ascii_ok or utf16_ok):
+              raise SystemExit("FATAL: built APK is missing android.permission.INTERNET")
+          print("OK: INTERNET permission present in APK",
+                f"(ascii={ascii_ok}, utf16={utf16_ok})")
+          PY
 
       - name: Rename APK
         run: |
