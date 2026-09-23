@@ -16,12 +16,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   String? _localError;
+  bool _trustCert = false;
 
   @override
   void initState() {
     super.initState();
     final api = context.read<AppState>().api;
-    _server.text = api.baseUrl.isNotEmpty ? api.baseUrl : 'http://192.168.1.177:8010';
+    _server.text = api.baseUrl;
+    _trustCert = api.allowBadCerts;
   }
 
   @override
@@ -39,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
             serverUrl: _server.text,
             email: _email.text,
             password: _password.text,
+            allowBadCerts: _trustCert,
           );
     } catch (e) {
       setState(() => _localError = e.toString());
@@ -59,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Sign in to your self-hosted server',
+              'Sign in with your public Mix player URL or LAN address',
               style: TextStyle(color: MixColors.muted),
             ),
             const SizedBox(height: 32),
@@ -69,7 +72,9 @@ class _LoginScreenState extends State<LoginScreen> {
               autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'Server URL',
-                hintText: 'http://192.168.1.x:8010',
+                hintText: 'https://music.example.com',
+                helperText: 'Public domain or http://192.168.x.x:8010',
+                helperMaxLines: 2,
               ),
             ),
             const SizedBox(height: 12),
@@ -86,11 +91,27 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: const InputDecoration(labelText: 'Password'),
               onSubmitted: (_) => busy ? null : _submit(),
             ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Trust server certificate', style: TextStyle(fontSize: 14)),
+              subtitle: const Text(
+                'Use if login fails with an SSL/certificate error on your self-hosted domain',
+                style: TextStyle(fontSize: 12, color: MixColors.muted),
+              ),
+              value: _trustCert,
+              activeColor: MixColors.green,
+              onChanged: busy
+                  ? null
+                  : (v) {
+                      setState(() => _trustCert = v);
+                    },
+            ),
             if (_localError != null) ...[
               const SizedBox(height: 12),
               Text(_localError!, style: const TextStyle(color: Colors.redAccent)),
             ],
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             FilledButton(
               onPressed: busy ? null : _submit,
               style: FilledButton.styleFrom(
@@ -109,8 +130,11 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Use the API port (default 8000 / 8010), not only the web UI port, unless your reverse proxy serves /api on the same host.',
-              style: TextStyle(color: MixColors.muted, fontSize: 12),
+              'Examples:\n'
+              '• https://music.asb-servers.com  (public — uses the web /api proxy)\n'
+              '• http://192.168.1.177:8010  (LAN API port)\n'
+              'You can omit https:// — it is added automatically for domains.',
+              style: TextStyle(color: MixColors.muted, fontSize: 12, height: 1.4),
             ),
           ],
         ),

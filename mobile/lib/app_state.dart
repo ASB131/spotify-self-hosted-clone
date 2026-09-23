@@ -61,12 +61,13 @@ class AppState extends ChangeNotifier {
     required String serverUrl,
     required String email,
     required String password,
+    bool allowBadCerts = false,
   }) async {
     error = null;
     busy = true;
     notifyListeners();
     try {
-      await api.setServer(serverUrl);
+      await api.setServer(serverUrl, allowBadCerts: allowBadCerts);
       await api.login(email, password);
       await refreshLibrary();
     } catch (e) {
@@ -156,18 +157,13 @@ class AppState extends ChangeNotifier {
     downloading.add(track.id);
     notifyListeners();
     try {
-      final client = http.Client();
-      try {
-        final req = http.Request('GET', Uri.parse(api.downloadUrl(track.id)));
-        req.headers.addAll(api.authHeaders());
-        final streamed = await client.send(req);
-        if (streamed.statusCode >= 400) {
-          throw ApiException('Download failed (${streamed.statusCode})');
-        }
-        await offline.saveDownloadStream(track: track, stream: streamed.stream);
-      } finally {
-        client.close();
+      final req = http.Request('GET', Uri.parse(api.downloadUrl(track.id)));
+      req.headers.addAll(api.authHeaders());
+      final streamed = await api.httpClient.send(req).timeout(const Duration(minutes: 30));
+      if (streamed.statusCode >= 400) {
+        throw ApiException('Download failed (${streamed.statusCode})');
       }
+      await offline.saveDownloadStream(track: track, stream: streamed.stream);
     } finally {
       downloading.remove(track.id);
       notifyListeners();

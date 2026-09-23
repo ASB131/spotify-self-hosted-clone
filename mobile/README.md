@@ -4,9 +4,10 @@ Native Android client for Mix player. Spotify-style mobile layout, streams when 
 
 ## Features
 
-- Sign in with your Mix player server URL + account
+- Sign in with your Mix player server URL + account (public HTTPS domain or LAN)
+- Optional “Trust server certificate” for self-hosted TLS quirks
 - Home, Search, Library, and full-screen player
-- Stream audio when online (same API as the web client)
+- Stream audio when online (same API as the web client; works through the web `/api` proxy)
 - Download tracks to the device for offline play
 - Cache playlists/tracks/home metadata locally (not media files)
 

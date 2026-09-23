@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
@@ -17,46 +20,159 @@ class ApiException implements Exception {
 class ApiClient {
   ApiClient();
 
-  static const _secure = FlutterSecureStorage();
+  static const _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   String _baseUrl = '';
   String? _token;
+  bool _allowBadCerts = false;
+  http.Client _client = http.Client();
 
   String get baseUrl => _baseUrl;
+  bool get allowBadCerts => _allowBadCerts;
   bool get isConfigured => _baseUrl.isNotEmpty && (_token?.isNotEmpty ?? false);
 
   Future<void> loadSaved() async {
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = (prefs.getString('api_base') ?? '').replaceAll(RegExp(r'/$'), '');
-    _token = await _secure.read(key: 'access_token');
+    _baseUrl = prefs.getString('api_base') ?? '';
+    _allowBadCerts = prefs.getBool('allow_bad_certs') ?? false;
+    _rebuildClient();
+    _token = prefs.getString('access_token');
+    if (_token == null || _token!.isEmpty) {
+      try {
+        _token = await _secure.read(key: 'access_token');
+      } catch (_) {}
+    }
   }
 
-  Future<void> setServer(String url) async {
-    _baseUrl = url.trim().replaceAll(RegExp(r'/$'), '');
+  void _rebuildClient() {
+    _client.close();
+    if (_allowBadCerts) {
+      final io = HttpClient()
+        ..badCertificateCallback = (cert, host, port) => true
+        ..connectionTimeout = const Duration(seconds: 20)
+        ..idleTimeout = const Duration(seconds: 30);
+      _client = IOClient(io);
+    } else {
+      final io = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 20)
+        ..idleTimeout = const Duration(seconds: 30);
+      _client = IOClient(io);
+    }
+  }
+
+  /// Normalize user input into an absolute API/web origin.
+  /// Private LAN IPs default to http; everything else defaults to https.
+  static String normalizeServerUrl(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) throw ApiException('Enter your Mix player server URL');
+
+    // Strip common pasted suffixes.
+    s = s.replaceAll(RegExp(r'/+$'), '');
+    s = s.replaceAll(RegExp(r'/(login|setup|extension).*$', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'/api(/v1)?$', caseSensitive: false), '');
+
+    if (!s.contains('://')) {
+      final host = s.split('/').first.split(':').first.toLowerCase();
+      final isLoopback = host == 'localhost' || host == '127.0.0.1';
+      final isPrivate = isLoopback ||
+          RegExp(r'^10\.\d+\.\d+\.\d+$').hasMatch(host) ||
+          RegExp(r'^192\.168\.\d+\.\d+$').hasMatch(host) ||
+          RegExp(r'^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$').hasMatch(host);
+      s = '${isPrivate ? 'http' : 'https'}://$s';
+    }
+
+    final uri = Uri.tryParse(s);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      throw ApiException('Invalid server URL. Example: https://music.example.com');
+    }
+
+    // Keep only origin (scheme://host[:port])
+    final port = uri.hasPort ? ':${uri.port}' : '';
+    return '${uri.scheme}://${uri.host}$port';
+  }
+
+  Future<void> setServer(String url, {bool? allowBadCerts}) async {
+    _baseUrl = normalizeServerUrl(url);
+    if (allowBadCerts != null) {
+      _allowBadCerts = allowBadCerts;
+      _rebuildClient();
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('api_base', _baseUrl);
+    await prefs.setBool('allow_bad_certs', _allowBadCerts);
+  }
+
+  Future<void> setAllowBadCerts(bool value) async {
+    _allowBadCerts = value;
+    _rebuildClient();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('allow_bad_certs', value);
+  }
+
+  Future<void> _persistToken(String token) async {
+    _token = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('access_token', token);
+    try {
+      await _secure.write(key: 'access_token', value: token);
+    } catch (_) {}
   }
 
   Future<void> login(String email, String password) async {
     if (_baseUrl.isEmpty) throw ApiException('Set your server URL first');
-    final res = await http.post(
-      Uri.parse('$_baseUrl/api/v1/auth/login'),
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-      body: jsonEncode({'email': email.trim(), 'password': password}),
-    );
+    http.Response res;
+    try {
+      res = await _client
+          .post(
+            Uri.parse('$_baseUrl/api/v1/auth/login'),
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: jsonEncode({'email': email.trim(), 'password': password}),
+          )
+          .timeout(const Duration(seconds: 25));
+    } on SocketException catch (e) {
+      throw ApiException(
+        'Cannot reach $_baseUrl (${e.message}). Check the URL, HTTPS, and that your phone can access the server.',
+      );
+    } on HandshakeException catch (e) {
+      throw ApiException(
+        'SSL error talking to $_baseUrl. Enable “Trust server certificate” if you use a self-hosted / broken cert chain, or fix TLS on the server. ($e)',
+      );
+    } on TlsException catch (e) {
+      throw ApiException(
+        'TLS error for $_baseUrl. Enable “Trust server certificate” or renew the certificate. ($e)',
+      );
+    } on http.ClientException catch (e) {
+      final msg = e.message;
+      if (msg.toLowerCase().contains('certificate') || msg.toLowerCase().contains('ssl') || msg.toLowerCase().contains('tls')) {
+        throw ApiException(
+          'Certificate problem for $_baseUrl. Turn on “Trust server certificate” below, or fix HTTPS on the server.',
+        );
+      }
+      throw ApiException('Network error: $msg');
+    } on TimeoutException {
+      throw ApiException('Timed out connecting to $_baseUrl');
+    }
+
     if (res.statusCode >= 400) {
       throw ApiException(_errorMessage(res), res.statusCode);
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    _token = data['access_token'] as String?;
-    if (_token == null || _token!.isEmpty) {
+    final token = data['access_token'] as String?;
+    if (token == null || token.isEmpty) {
       throw ApiException('No access token returned');
     }
-    await _secure.write(key: 'access_token', value: _token);
+    await _persistToken(token);
   }
 
   Future<void> logout() async {
     _token = null;
-    await _secure.delete(key: 'access_token');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('access_token');
+    try {
+      await _secure.delete(key: 'access_token');
+    } catch (_) {}
   }
 
   Map<String, String> _headers({bool json = true}) {
@@ -68,8 +184,30 @@ class ApiClient {
     return h;
   }
 
+  Future<http.Response> _send(Future<http.Response> Function() run) async {
+    try {
+      return await run().timeout(const Duration(seconds: 30));
+    } on SocketException catch (e) {
+      throw ApiException('Cannot reach server: ${e.message}');
+    } on HandshakeException catch (_) {
+      throw ApiException(
+        'SSL error. Enable “Trust server certificate” on the login screen, or fix HTTPS on the server.',
+      );
+    } on TlsException catch (_) {
+      throw ApiException(
+        'TLS error. Enable “Trust server certificate” on the login screen, or fix HTTPS on the server.',
+      );
+    } on http.ClientException catch (e) {
+      throw ApiException('Network error: ${e.message}');
+    } on TimeoutException {
+      throw ApiException('Request timed out');
+    }
+  }
+
   Future<dynamic> _get(String path) async {
-    final res = await http.get(Uri.parse('$_baseUrl$path'), headers: _headers());
+    final res = await _send(
+      () => _client.get(Uri.parse('$_baseUrl$path'), headers: _headers()),
+    );
     if (res.statusCode == 401) throw ApiException('Session expired', 401);
     if (res.statusCode >= 400) throw ApiException(_errorMessage(res), res.statusCode);
     if (res.body.isEmpty) return null;
@@ -77,10 +215,12 @@ class ApiClient {
   }
 
   Future<dynamic> _post(String path, [Map<String, dynamic>? body]) async {
-    final res = await http.post(
-      Uri.parse('$_baseUrl$path'),
-      headers: _headers(),
-      body: body == null ? null : jsonEncode(body),
+    final res = await _send(
+      () => _client.post(
+        Uri.parse('$_baseUrl$path'),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
     );
     if (res.statusCode == 401) throw ApiException('Session expired', 401);
     if (res.statusCode >= 400) throw ApiException(_errorMessage(res), res.statusCode);
@@ -108,6 +248,8 @@ class ApiClient {
   }
 
   Map<String, String> authHeaders() => _headers(json: false);
+
+  http.Client get httpClient => _client;
 
   String streamUrl(int trackId) => '$_baseUrl/api/v1/tracks/$trackId/stream';
 
