@@ -1,8 +1,8 @@
 # Mix player
 
-Self-hosted music library with a Spotify-style web UI, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks.
+Self-hosted music library with a Spotify-style web UI, Android app, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks.
 
-**v2.0.0**
+**v2.1.0**
 
 ## Quick start (server: pull images only)
 
@@ -42,6 +42,16 @@ If `docker compose pull` fails with unauthorized, make the GHCR packages **Publi
 | Redis + app data | `/ssd2_cache/caches/spotify_clone/...` |
 | Audio files | `/ssd2_cache/spotify_clone_media` |
 
+## Android app (APK)
+
+Install **mix-player.apk** from the [latest GitHub Release](https://github.com/ASB131/spotify-self-hosted-clone/releases) (or Actions → Build Android APK).
+
+- Enter your **API** base URL (e.g. `http://192.168.1.177:8010`) and account
+- Streams when online; download MP3/FLAC to the phone for offline play
+- Caches library metadata so Home / Library / Search still work without signal
+
+Source: `mobile/`. CI workflow: `.github/workflows/android-apk.yml`.
+
 ## How music gets in
 
 1. Install the Chrome extension (Profile → Download extension)
@@ -65,6 +75,8 @@ Optional: admin can upload YouTube `cookies.txt` for age-restricted videos.
 ## Local development
 
 See `docker-compose.yml` at the repo root (build from source). Copy `.env.example` → `.env`, then `docker compose up --build`.
+
+Android: see `mobile/README.md`.
 
 ## License
 
