@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -14,12 +15,17 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = mixHttpOverrides;
 
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.mixplayer.channel.audio',
-    androidNotificationChannelName: 'Mix Player',
-    androidNotificationOngoing: true,
-    androidShowNotificationBadge: true,
-  );
+  // Lock-screen controls need AudioServiceActivity. Never block app launch if init fails.
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.mixplayer.channel.audio',
+      androidNotificationChannelName: 'Mix Player',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: true,
+    );
+  } catch (e, st) {
+    debugPrint('JustAudioBackground.init failed (continuing without lock-screen controls): $e\n$st');
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

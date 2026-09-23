@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -24,7 +25,7 @@ class _ShellScreenState extends State<ShellScreen> {
   final _libraryNav = GlobalKey<NavigatorState>();
   final _profileNav = GlobalKey<NavigatorState>();
 
-  Future<bool> _onWillPop() async {
+  Future<void> _handleSystemBack() async {
     final nav = switch (_tab) {
       0 => _homeNav.currentState,
       1 => _searchNav.currentState,
@@ -33,9 +34,10 @@ class _ShellScreenState extends State<ShellScreen> {
     };
     if (nav != null && nav.canPop()) {
       nav.pop();
-      return false;
+      return;
     }
-    return true;
+    // Leave the app when already at a tab root.
+    SystemNavigator.pop();
   }
 
   @override
@@ -50,8 +52,11 @@ class _ShellScreenState extends State<ShellScreen> {
       return const LoginScreen();
     }
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleSystemBack();
+      },
       child: Scaffold(
         body: SafeArea(
           child: IndexedStack(

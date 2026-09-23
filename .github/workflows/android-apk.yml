@@ -36,6 +36,17 @@ jobs:
           mkdir -p android/app/src/release
           cp tooling/release-AndroidManifest.xml android/app/src/release/AndroidManifest.xml
 
+          # just_audio_background requires AudioServiceActivity (or a subclass).
+          MAIN_KT=$(find android/app/src/main -name MainActivity.kt | head -1)
+          if [ -n "$MAIN_KT" ]; then
+            cp tooling/MainActivity.kt "$MAIN_KT"
+            echo "Patched MainActivity at $MAIN_KT"
+            cat "$MAIN_KT"
+          else
+            echo "FATAL: MainActivity.kt not found"
+            exit 1
+          fi
+
       - name: Allow network + cleartext HTTP for self-hosted servers
         run: |
           set -euo pipefail
@@ -117,13 +128,19 @@ jobs:
           print(fixed)
           PY
 
-          # Display name + media playback foreground service permissions.
+          # Display name + media playback permissions + audio_service components.
           python3 <<'PY'
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text(encoding="utf-8")
           text = text.replace('android:label="mix_player"', 'android:label="Mix Player"')
           text = text.replace("android:label='mix_player'", 'android:label="Mix Player"')
+          if 'xmlns:tools=' not in text:
+              text = text.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">',
+                  1,
+              )
           perms = [
               "android.permission.WAKE_LOCK",
               "android.permission.FOREGROUND_SERVICE",
@@ -132,18 +149,38 @@ jobs:
           for perm in perms:
               needle = f'<uses-permission android:name="{perm}"/>'
               if needle not in text and f'android:name="{perm}"' not in text:
-                  # Prefer inserting after INTERNET if present, else after <manifest ...>
                   anchor = '<uses-permission android:name="android.permission.INTERNET"/>'
                   if anchor in text:
                       text = text.replace(anchor, anchor + "\n    " + needle, 1)
                   else:
                       gt = text.find(">")
-                      if gt < 0:
-                          raise SystemExit("malformed manifest")
                       text = text[: gt + 1] + "\n    " + needle + text[gt + 1 :]
+
+          service_block = '''
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+'''
+          if "com.ryanheise.audioservice.AudioService" not in text:
+              text = text.replace("</application>", service_block + "    </application>", 1)
+
           manifest.write_text(text, encoding="utf-8")
           print("--- branding / media perms ---")
-          print("\n".join(text.splitlines()[:55]))
+          print("\n".join(text.splitlines()[:80]))
           PY
 
           if [ -f android/app/build.gradle.kts ]; then
