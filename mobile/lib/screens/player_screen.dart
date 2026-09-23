@@ -120,7 +120,7 @@ class NowPlayingScreen extends StatelessWidget {
               builder: (context, snap) {
                 final pos = snap.data ?? Duration.zero;
                 final total = player.duration ?? Duration(seconds: track.durationSeconds ?? 0);
-                final maxMs = total.inMilliseconds <= 0 ? 1 : total.inMilliseconds.toDouble();
+                final maxMs = total.inMilliseconds <= 0 ? 1.0 : total.inMilliseconds.toDouble();
                 return Column(
                   children: [
                     SliderTheme(
@@ -132,7 +132,7 @@ class NowPlayingScreen extends StatelessWidget {
                         trackHeight: 3,
                       ),
                       child: Slider(
-                        value: pos.inMilliseconds.clamp(0, maxMs.toInt()).toDouble(),
+                        value: pos.inMilliseconds.clamp(0, maxMs.round()).toDouble(),
                         max: maxMs,
                         onChanged: (v) => state.player.seek(Duration(milliseconds: v.round())),
                       ),
