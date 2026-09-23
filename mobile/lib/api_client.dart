@@ -48,18 +48,13 @@ class ApiClient {
 
   void _rebuildClient() {
     _client.close();
+    final io = HttpClient();
+    io.connectionTimeout = const Duration(seconds: 20);
+    io.idleTimeout = const Duration(seconds: 30);
     if (_allowBadCerts) {
-      final io = HttpClient()
-        ..badCertificateCallback = (cert, host, port) => true
-        ..connectionTimeout = const Duration(seconds: 20)
-        ..idleTimeout = const Duration(seconds: 30);
-      _client = IOClient(io);
-    } else {
-      final io = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 20)
-        ..idleTimeout = const Duration(seconds: 30);
-      _client = IOClient(io);
+      io.badCertificateCallback = (cert, host, port) => true;
     }
+    _client = IOClient(io);
   }
 
   /// Normalize user input into an absolute API/web origin.
