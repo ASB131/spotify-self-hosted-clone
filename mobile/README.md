@@ -13,7 +13,9 @@ Native Android client for Mix player. Spotify-style mobile layout, streams when 
 
 ## Build (CI)
 
-GitHub Actions builds a release APK on `v*` tags and `workflow_dispatch`. Artifacts are uploaded to the release (and as a workflow artifact).
+GitHub Actions builds a release APK on `v*` tags and `workflow_dispatch`.
+
+Release APKs **must** include `android.permission.INTERNET` (Flutter’s template only adds it for debug/profile). CI patches the main manifest and fails the job if the permission is missing from the built APK.
 
 ## Local build
 

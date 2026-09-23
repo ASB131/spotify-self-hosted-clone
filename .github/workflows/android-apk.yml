@@ -3,9 +3,6 @@ name: Build Android APK
 on:
   push:
     tags: ["v*"]
-    paths:
-      - "mobile/**"
-      - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,30 +32,58 @@ jobs:
           flutter create --platforms=android --org=com.mixplayer --project-name=mix_player .
           # Preserve our Dart sources / pubspec (flutter create does not overwrite lib/).
 
-      - name: Allow cleartext HTTP + network security
+      - name: Allow network + cleartext HTTP for self-hosted servers
         run: |
+          set -euo pipefail
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           mkdir -p android/app/src/main/res/xml
-          cat > android/app/src/main/res/xml/network_security_config.xml <<'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-            <base-config cleartextTrafficPermitted="false">
-              <trust-anchors>
-                <certificates src="system" />
-                <certificates src="user" />
-              </trust-anchors>
-            </base-config>
-            <!-- LAN / self-hosted HTTP APIs -->
-            <domain-config cleartextTrafficPermitted="true">
-              <domain includeSubdomains="true">localhost</domain>
-              <domain includeSubdomains="true">10.0.0.0</domain>
-              <domain includeSubdomains="true">192.168.0.0</domain>
-              <domain includeSubdomains="true">172.16.0.0</domain>
-            </domain-config>
-          </network-security-config>
-          XML
-          # Android domain-config doesn't support CIDR; allow cleartext globally for self-host flexibility
-          # while still trusting system CAs for HTTPS public domains.
+
+          # Flutter release manifests intentionally omit INTERNET (debug/profile only).
+          # Without this, the APK cannot open any sockets — browsers still work on the same phone.
+          python3 <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+
+          if "android.permission.INTERNET" not in text:
+              needle = "<manifest"
+              idx = text.find(needle)
+              if idx < 0:
+                  raise SystemExit("AndroidManifest.xml missing <manifest>")
+              # Insert permissions immediately after the opening <manifest ...> tag.
+              gt = text.find(">", idx)
+              if gt < 0:
+                  raise SystemExit("AndroidManifest.xml malformed")
+              insert = (
+                  '>\n    <uses-permission android:name="android.permission.INTERNET"/>\n'
+                  '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>'
+              )
+              text = text[:gt] + insert + text[gt + 1:]
+
+          # Allow http:// LAN API hosts + attach network security config.
+          if "usesCleartextTraffic" not in text:
+              text = text.replace(
+                  "<application",
+                  '<application android:usesCleartextTraffic="true" '
+                  'android:networkSecurityConfig="@xml/network_security_config"',
+                  1,
+              )
+          elif "networkSecurityConfig" not in text:
+              text = text.replace(
+                  'usesCleartextTraffic="true"',
+                  'usesCleartextTraffic="true" '
+                  'android:networkSecurityConfig="@xml/network_security_config"',
+                  1,
+              )
+
+          manifest.write_text(text, encoding="utf-8")
+          print("--- manifest (head) ---")
+          print("\n".join(text.splitlines()[:45]))
+          if "android.permission.INTERNET" not in text:
+              raise SystemExit("FATAL: INTERNET permission still missing")
+          PY
+
           cat > android/app/src/main/res/xml/network_security_config.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
@@ -70,14 +95,24 @@ jobs:
             </base-config>
           </network-security-config>
           XML
-          if ! grep -q 'usesCleartextTraffic' "$MANIFEST"; then
-            sed -i 's/<application/<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml\/network_security_config"/' "$MANIFEST"
-          elif ! grep -q 'networkSecurityConfig' "$MANIFEST"; then
-            sed -i 's/usesCleartextTraffic="true"/usesCleartextTraffic="true" android:networkSecurityConfig="@xml\/network_security_config"/' "$MANIFEST"
-          fi
-          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
-            sed -i '0,/<manifest /s//<manifest /\n    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n/' "$MANIFEST" || true
-          fi
+          # Strip accidental leading spaces from the heredoc body (YAML indent).
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/res/xml/network_security_config.xml")
+          lines = p.read_text(encoding="utf-8").splitlines()
+          # Drop common leading whitespace from non-empty lines while preserving relative indent.
+          nonempty = [ln for ln in lines if ln.strip()]
+          if not nonempty:
+              raise SystemExit("empty network_security_config")
+          # Find minimum indent of non-empty lines
+          def lead(s):
+              return len(s) - len(s.lstrip(" "))
+          m = min(lead(ln) for ln in nonempty)
+          fixed = "\n".join(ln[m:] if ln.strip() else "" for ln in lines).strip() + "\n"
+          p.write_text(fixed, encoding="utf-8")
+          print(fixed)
+          PY
+
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle.kts || true
           fi
@@ -85,14 +120,23 @@ jobs:
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
             sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
           fi
-          echo "--- manifest ---"
-          head -40 "$MANIFEST"
 
       - name: Pub get
         run: flutter pub get
 
       - name: Build release APK
         run: flutter build apk --release
+
+      - name: Verify INTERNET permission in APK
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          # Binary XML still contains the ASCII permission string.
+          if ! strings "$APK" | grep -q "android.permission.INTERNET"; then
+            echo "FATAL: built APK is missing android.permission.INTERNET"
+            exit 1
+          fi
+          echo "OK: INTERNET permission present in APK"
 
       - name: Rename APK
         run: |
