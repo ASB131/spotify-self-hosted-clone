@@ -216,7 +216,9 @@ Future<MixAudioHandler> initMixAudioService() {
       androidNotificationChannelId: 'com.mixplayer.channel.audio',
       androidNotificationChannelName: 'Now playing',
       androidNotificationChannelDescription: 'Mix Player media controls',
-      androidNotificationOngoing: true,
+      // audio_service asserts: ongoing requires stopForegroundOnPause=true.
+      // Keep the FGS alive while paused so One UI keeps the shade media card.
+      androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
       androidNotificationIcon: 'drawable/ic_stat_mix_player',
       androidShowNotificationBadge: false,
