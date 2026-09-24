@@ -16,26 +16,31 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = mixHttpOverrides;
 
-  // Lock-screen / shade controls need AudioServiceActivity + a posted notification.
+  // Must succeed for the One UI / Android shade media card (MediaStyle notification).
   try {
     await JustAudioBackground.init(
       androidNotificationChannelId: 'com.mixplayer.channel.audio',
-      androidNotificationChannelName: 'Mix Player',
-      androidNotificationOngoing: false,
-      androidShowNotificationBadge: true,
+      androidNotificationChannelName: 'Now playing',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: false,
       androidStopForegroundOnPause: false,
+      preloadArtwork: true,
+      artDownscaleWidth: 200,
+      artDownscaleHeight: 200,
+      fastForwardInterval: const Duration(seconds: 10),
+      rewindInterval: const Duration(seconds: 10),
     );
   } catch (e, st) {
-    debugPrint('JustAudioBackground.init failed (continuing): $e\n$st');
+    debugPrint('JustAudioBackground.init failed: $e\n$st');
   }
 
-  // Android 13+ hides media notifications without POST_NOTIFICATIONS.
   if (Platform.isAndroid) {
     try {
-      final status = await Permission.notification.status;
+      var status = await Permission.notification.status;
       if (!status.isGranted) {
-        await Permission.notification.request();
+        status = await Permission.notification.request();
       }
+      debugPrint('Notification permission: $status');
     } catch (e) {
       debugPrint('Notification permission request failed: $e');
     }

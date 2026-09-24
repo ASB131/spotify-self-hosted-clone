@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -160,6 +161,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Text(
             'Server: ${state.api.baseUrl}',
             style: const TextStyle(color: MixColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => openAppSettings(),
+            child: const Text(
+              'Notification settings (needed for shade media controls)',
+              style: TextStyle(fontSize: 12),
+            ),
           ),
         ],
       ),

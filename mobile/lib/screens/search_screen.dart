@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'artist_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -181,9 +182,9 @@ class _ArtistsTab extends StatelessWidget {
           title: Text(a.name, style: const TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text('${a.trackCount} songs', style: const TextStyle(color: MixColors.muted, fontSize: 13)),
           onTap: () {
-            final tracks = context.read<AppState>().tracksByArtist(a.name);
-            if (tracks.isEmpty) return;
-            context.read<AppState>().playTrackInContext(tracks.first, tracks);
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ArtistScreen(artist: a)),
+            );
           },
         );
       },

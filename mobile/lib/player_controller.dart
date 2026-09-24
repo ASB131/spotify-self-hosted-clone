@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'api_client.dart';
 import 'models.dart';
@@ -20,57 +20,16 @@ MediaItem mediaItemFor(Track track, ApiClient api, [OfflineStore? offline]) {
   }
   return MediaItem(
     id: '${track.id}',
+    album: track.album ?? 'Mix Player',
     title: track.title,
     artist: track.artist,
-    album: track.album,
     duration: track.durationSeconds != null ? Duration(seconds: track.durationSeconds!) : null,
     artUri: artUri,
     playable: true,
+    displayTitle: track.title,
+    displaySubtitle: track.artist,
+    displayDescription: track.formatLabel,
   );
-}
-
-/// Streams through Dart's HttpClient so "Trust server certificate" applies to playback too.
-class AuthedRemoteSource extends StreamAudioSource {
-  AuthedRemoteSource(this.api, this.track, [OfflineStore? offline])
-      : super(tag: mediaItemFor(track, api, offline));
-
-  final ApiClient api;
-  final Track track;
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    final headers = Map<String, String>.from(api.authHeaders());
-    if (start != null || end != null) {
-      headers['range'] = 'bytes=${start ?? 0}-${end ?? ''}';
-    }
-    final req = http.Request('GET', Uri.parse(api.streamUrl(track.id)));
-    req.headers.addAll(headers);
-    final res = await api.httpClient.send(req);
-    if (res.statusCode >= 400) {
-      throw ApiException('Stream failed (${res.statusCode})', res.statusCode);
-    }
-
-    final contentLength = res.contentLength;
-    int? sourceLength = contentLength;
-    int offset = start ?? 0;
-
-    final cr = res.headers['content-range'];
-    if (cr != null) {
-      final m = RegExp(r'bytes\s+(\d+)-(\d+)/(\d+|\*)').firstMatch(cr);
-      if (m != null) {
-        offset = int.parse(m.group(1)!);
-        if (m.group(3) != '*') sourceLength = int.parse(m.group(3)!);
-      }
-    }
-
-    return StreamAudioResponse(
-      sourceLength: sourceLength,
-      contentLength: contentLength,
-      offset: offset,
-      stream: res.stream,
-      contentType: res.headers['content-type'] ?? 'audio/mpeg',
-    );
-  }
 }
 
 class PlayerController {
@@ -84,12 +43,51 @@ class PlayerController {
   int index = -1;
   int? _playlistId;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription? _interruptionSub;
+  StreamSubscription? _noisySub;
+  bool _resumeAfterInterruption = false;
   void Function()? onQueueChanged;
   Track? get current => (index >= 0 && index < queue.length) ? queue[index] : null;
 
   Future<void> init() async {
     final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
+    await session.configure(
+      const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.music,
+          usage: AndroidAudioUsage.media,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        androidWillPauseWhenDucked: true,
+      ),
+    );
+
+    // Pause (don't duck) when Spotify / YouTube / calls take audio focus.
+    _interruptionSub = session.interruptionEventStream.listen((event) async {
+      if (event.begin) {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+          case AudioInterruptionType.pause:
+          case AudioInterruptionType.unknown:
+            _resumeAfterInterruption = player.playing;
+            if (player.playing) await player.pause();
+            onQueueChanged?.call();
+            break;
+        }
+      } else {
+        if (_resumeAfterInterruption) {
+          _resumeAfterInterruption = false;
+        }
+      }
+    });
+
+    _noisySub = session.becomingNoisyEventStream.listen((_) async {
+      if (player.playing) await player.pause();
+      onQueueChanged?.call();
+    });
+
     _indexSub = player.currentIndexStream.listen((i) {
       if (i == null || i < 0 || i >= queue.length) return;
       if (index != i) {
@@ -103,6 +101,15 @@ class PlayerController {
     });
   }
 
+  Future<void> _ensureNotificationPermission() async {
+    try {
+      final status = await Permission.notification.status;
+      if (!status.isGranted) {
+        await Permission.notification.request();
+      }
+    } catch (_) {}
+  }
+
   AudioSource _sourceFor(Track track) {
     final tag = mediaItemFor(track, api, offline);
     final local = offline.localPath(track.id);
@@ -112,23 +119,36 @@ class PlayerController {
     if (!api.isConfigured) {
       throw ApiException('Track not downloaded and server is unavailable');
     }
-    return AuthedRemoteSource(api, track, offline);
+
+    // ExoPlayer URI sources are required for a working Samsung/One UI media card
+    // (live seek position + play/pause icon). Custom Dart StreamAudioSource only
+    // half-registers a MediaSession (shows under Media output, seek stuck at 0).
+    return AudioSource.uri(
+      Uri.parse(api.streamUrl(track.id)),
+      headers: Map<String, String>.from(api.authHeaders()),
+      tag: tag,
+    );
   }
 
   Future<void> playTracks(List<Track> tracks, {int startIndex = 0, int? playlistId}) async {
     if (tracks.isEmpty) return;
+    await _ensureNotificationPermission();
     queue = List.of(tracks);
     index = startIndex.clamp(0, queue.length - 1);
     _playlistId = playlistId;
     final sources = queue.map(_sourceFor).toList();
     await player.setAudioSource(
-      ConcatenatingAudioSource(children: sources),
+      ConcatenatingAudioSource(
+        children: sources,
+        useLazyPreparation: true,
+      ),
       initialIndex: index,
       initialPosition: Duration.zero,
     );
     await player.play();
     final t = current;
     if (t != null) api.recordPlay(t.id, playlistId: _playlistId);
+    onQueueChanged?.call();
   }
 
   Future<void> addToQueue(Track track) async {
@@ -150,6 +170,7 @@ class PlayerController {
     } else {
       await player.play();
     }
+    onQueueChanged?.call();
   }
 
   Future<void> next() async {
@@ -160,6 +181,7 @@ class PlayerController {
       await player.seek(Duration.zero, index: 0);
     }
     await player.play();
+    onQueueChanged?.call();
   }
 
   Future<void> prev() async {
@@ -174,12 +196,15 @@ class PlayerController {
       await player.seek(Duration.zero, index: queue.length - 1);
     }
     await player.play();
+    onQueueChanged?.call();
   }
 
   Future<void> seek(Duration d) => player.seek(d);
 
   Future<void> dispose() async {
     await _indexSub?.cancel();
+    await _interruptionSub?.cancel();
+    await _noisySub?.cancel();
     await player.dispose();
   }
 }
