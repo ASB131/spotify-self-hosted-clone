@@ -135,7 +135,7 @@ jobs:
           text = manifest.read_text(encoding="utf-8")
           text = text.replace('android:label="mix_player"', 'android:label="Mix Player"')
           text = text.replace("android:label='mix_player'", 'android:label="Mix Player"')
-          if 'xmlns:tools=' not in text:
+          if "xmlns:tools=" not in text:
               text = text.replace(
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">',
@@ -156,27 +156,9 @@ jobs:
                       gt = text.find(">")
                       text = text[: gt + 1] + "\n    " + needle + text[gt + 1 :]
 
-          service_block = '''
-        <service
-            android:name="com.ryanheise.audioservice.AudioService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="true"
-            tools:ignore="Instantiatable">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
-        <receiver
-            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
-            android:exported="true"
-            tools:ignore="Instantiatable">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
-'''
+          snippet = Path("tooling/audio_service_manifest_snippet.xml").read_text(encoding="utf-8")
           if "com.ryanheise.audioservice.AudioService" not in text:
-              text = text.replace("</application>", service_block + "    </application>", 1)
+              text = text.replace("</application>", snippet + "    </application>", 1)
 
           manifest.write_text(text, encoding="utf-8")
           print("--- branding / media perms ---")
