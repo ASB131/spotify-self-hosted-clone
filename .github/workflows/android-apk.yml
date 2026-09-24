@@ -128,6 +128,11 @@ jobs:
           print(fixed)
           PY
 
+          # White monochrome notification icon + keep rule (required for MediaStyle shade card).
+          mkdir -p android/app/src/main/res/drawable android/app/src/main/res/raw
+          cp tooling/ic_stat_mix_player.xml android/app/src/main/res/drawable/ic_stat_mix_player.xml
+          cp tooling/keep.xml android/app/src/main/res/raw/keep.xml
+
           # Display name + media playback permissions + audio_service components.
           python3 <<'PY'
           from pathlib import Path
@@ -168,8 +173,21 @@ jobs:
 
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle.kts || true
-            # Plugins (shared_preferences / sqflite / permission_handler) need compileSdk 36+
             sed -i 's/compileSdk = .*/compileSdk = 36/' android/app/build.gradle.kts || true
+            # Keep notification drawables from being stripped.
+            python3 <<'PY'
+from pathlib import Path
+p = Path("android/app/build.gradle.kts")
+t = p.read_text(encoding="utf-8")
+if "shrinkResources" not in t:
+    t = t.replace(
+        "release {",
+        "release {\n            shrinkResources = false",
+        1,
+    )
+    p.write_text(t, encoding="utf-8")
+print(p.read_text(encoding="utf-8"))
+PY
           fi
           if [ -f android/app/build.gradle ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true

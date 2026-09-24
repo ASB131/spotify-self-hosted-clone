@@ -5,13 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
+import 'audio_handler.dart';
 import 'models.dart';
 import 'player_controller.dart';
 import 'storage.dart';
 
 class AppState extends ChangeNotifier {
-  AppState() {
-    player = PlayerController(api, offline);
+  AppState({required MixAudioHandler audioHandler}) {
+    player = PlayerController(api, offline, audioHandler);
     player.onQueueChanged = refreshUi;
     _bootstrap();
   }
