@@ -2,7 +2,7 @@
 
 Self-hosted music library with a Spotify-style web UI, Android app, FastAPI backend, Celery download workers, and a Chrome extension for saving YouTube tracks.
 
-**v2.3.4**
+**v2.3.5**
 
 ## Quick start (server: pull images only)
 
