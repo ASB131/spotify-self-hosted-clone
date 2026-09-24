@@ -37,7 +37,7 @@ class HomeScreen extends StatelessWidget {
                       style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
                     ),
                   ),
-                  if (!state.online)
+                  if (state.offlineMode)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(

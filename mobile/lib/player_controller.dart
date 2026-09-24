@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +25,7 @@ MediaItem mediaItemFor(Track track, ApiClient api, [OfflineStore? offline]) {
     album: track.album,
     duration: track.durationSeconds != null ? Duration(seconds: track.durationSeconds!) : null,
     artUri: artUri,
+    playable: true,
   );
 }
 
@@ -80,16 +83,36 @@ class PlayerController {
   List<Track> queue = [];
   int index = -1;
   int? _playlistId;
+  StreamSubscription<int?>? _indexSub;
+  void Function()? onQueueChanged;
   Track? get current => (index >= 0 && index < queue.length) ? queue[index] : null;
 
   Future<void> init() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
-    player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
-        next();
+    _indexSub = player.currentIndexStream.listen((i) {
+      if (i == null || i < 0 || i >= queue.length) return;
+      if (index != i) {
+        index = i;
+        final t = current;
+        if (t != null) {
+          api.recordPlay(t.id, playlistId: _playlistId);
+        }
+        onQueueChanged?.call();
       }
     });
+  }
+
+  AudioSource _sourceFor(Track track) {
+    final tag = mediaItemFor(track, api, offline);
+    final local = offline.localPath(track.id);
+    if (local != null) {
+      return AudioSource.file(local, tag: tag);
+    }
+    if (!api.isConfigured) {
+      throw ApiException('Track not downloaded and server is unavailable');
+    }
+    return AuthedRemoteSource(api, track, offline);
   }
 
   Future<void> playTracks(List<Track> tracks, {int startIndex = 0, int? playlistId}) async {
@@ -97,33 +120,28 @@ class PlayerController {
     queue = List.of(tracks);
     index = startIndex.clamp(0, queue.length - 1);
     _playlistId = playlistId;
-    await _loadCurrent();
+    final sources = queue.map(_sourceFor).toList();
+    await player.setAudioSource(
+      ConcatenatingAudioSource(children: sources),
+      initialIndex: index,
+      initialPosition: Duration.zero,
+    );
     await player.play();
+    final t = current;
+    if (t != null) api.recordPlay(t.id, playlistId: _playlistId);
   }
 
   Future<void> addToQueue(Track track) async {
     queue.add(track);
     if (current == null) {
       index = 0;
-      await _loadCurrent();
-      await player.play();
+      await playTracks(queue, startIndex: 0, playlistId: _playlistId);
+      return;
     }
-  }
-
-  Future<void> _loadCurrent() async {
-    final track = current;
-    if (track == null) return;
-    final tag = mediaItemFor(track, api, offline);
-    final local = offline.localPath(track.id);
-    if (local != null) {
-      await player.setAudioSource(AudioSource.file(local, tag: tag));
-    } else {
-      if (!api.isConfigured) {
-        throw ApiException('Track not downloaded and server is unavailable');
-      }
-      await player.setAudioSource(AuthedRemoteSource(api, track, offline));
+    final concat = player.audioSource;
+    if (concat is ConcatenatingAudioSource) {
+      await concat.add(_sourceFor(track));
     }
-    api.recordPlay(track.id, playlistId: _playlistId);
   }
 
   Future<void> toggle() async {
@@ -136,12 +154,11 @@ class PlayerController {
 
   Future<void> next() async {
     if (queue.isEmpty) return;
-    if (index >= queue.length - 1) {
-      index = 0;
+    if (player.hasNext) {
+      await player.seekToNext();
     } else {
-      index += 1;
+      await player.seek(Duration.zero, index: 0);
     }
-    await _loadCurrent();
     await player.play();
   }
 
@@ -151,18 +168,18 @@ class PlayerController {
       await player.seek(Duration.zero);
       return;
     }
-    if (index <= 0) {
-      index = queue.length - 1;
+    if (player.hasPrevious) {
+      await player.seekToPrevious();
     } else {
-      index -= 1;
+      await player.seek(Duration.zero, index: queue.length - 1);
     }
-    await _loadCurrent();
     await player.play();
   }
 
   Future<void> seek(Duration d) => player.seek(d);
 
   Future<void> dispose() async {
+    await _indexSub?.cancel();
     await player.dispose();
   }
 }

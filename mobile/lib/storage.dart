@@ -8,7 +8,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
-/// Metadata-only cache (tracks, playlists, home). Media files are handled separately.
+String _stableUrlKey(String url) {
+  // FNV-1a 64-bit — stable across launches, no extra package.
+  var h = 0xcbf29ce484222325;
+  for (final c in url.codeUnits) {
+    h ^= c;
+    h = (h * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+  }
+  return 'url_${h.toRadixString(16)}';
+}
+
+/// Metadata-only cache (tracks, playlists, home).
 class MetadataCache {
   static const _kTracks = 'cache_tracks_v1';
   static const _kPlaylists = 'cache_playlists_v1';
@@ -68,6 +78,33 @@ class MetadataCache {
     final list = jsonDecode(raw) as List;
     return list.map((e) => Track.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
+
+  /// Rough size of metadata keys we own in SharedPreferences.
+  Future<int> metadataBytesUsed() async {
+    final prefs = await SharedPreferences.getInstance();
+    var total = 0;
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('cache_') || key.startsWith(_kPlaylistTracksPrefix)) {
+        final v = prefs.get(key);
+        if (v is String) total += v.length;
+      }
+    }
+    return total;
+  }
+}
+
+class StorageBreakdown {
+  StorageBreakdown({
+    required this.mediaBytes,
+    required this.thumbnailBytes,
+    required this.metadataBytes,
+  });
+
+  final int mediaBytes;
+  final int thumbnailBytes;
+  final int metadataBytes;
+
+  int get totalBytes => mediaBytes + thumbnailBytes + metadataBytes;
 }
 
 class OfflineStore {
@@ -76,6 +113,7 @@ class OfflineStore {
   Directory? _root;
   Directory? _artRoot;
   final Map<int, String> _index = {};
+  final Map<String, Uint8List> _artMem = {};
 
   Future<void> init() async {
     final docs = await getApplicationDocumentsDirectory();
@@ -115,35 +153,103 @@ class OfflineStore {
     return File(path).existsSync() ? path : null;
   }
 
-  Set<int> get downloadedIds => _index.keys.toSet();
+  Set<int> get downloadedIds => {
+        for (final e in _index.entries)
+          if (File(e.value).existsSync()) e.key,
+      };
 
   int get downloadedCount => downloadedIds.length;
 
-  Future<int> offlineBytesUsed() async {
-    await init();
-    var total = 0;
-    for (final path in _index.values) {
-      final f = File(path);
-      if (await f.exists()) total += await f.length();
+  List<int> get downloadedIdList {
+    final ids = downloadedIds.toList()..sort();
+    return ids;
+  }
+
+  int? fileSizeOf(int trackId) {
+    final path = localPath(trackId);
+    if (path == null) return null;
+    return File(path).lengthSync();
+  }
+
+  String _artKey({int? trackId, String? artUrl}) {
+    if (trackId != null) return 'track_$trackId';
+    if (artUrl != null && artUrl.isNotEmpty) return _stableUrlKey(artUrl);
+    return '';
+  }
+
+  File? _artDiskFile(String key) {
+    if (_artRoot == null || key.isEmpty) return null;
+    final f = File(p.join(_artRoot!.path, '$key.jpg'));
+    return f.existsSync() ? f : null;
+  }
+
+  /// Sync memory hit, then disk. Returns null if not cached yet.
+  Uint8List? artBytesSync({int? trackId, String? artUrl}) {
+    final key = _artKey(trackId: trackId, artUrl: artUrl);
+    if (key.isEmpty) return null;
+    final mem = _artMem[key];
+    if (mem != null) return mem;
+    final disk = _artDiskFile(key);
+    if (disk == null) return null;
+    try {
+      final bytes = disk.readAsBytesSync();
+      _artMem[key] = bytes;
+      return bytes;
+    } catch (_) {
+      return null;
     }
-    if (_artRoot != null && await _artRoot!.exists()) {
-      await for (final ent in _artRoot!.list(recursive: true)) {
-        if (ent is File) total += await ent.length();
+  }
+
+  Future<Uint8List?> loadArtBytes({int? trackId, String? artUrl}) async {
+    final cached = artBytesSync(trackId: trackId, artUrl: artUrl);
+    if (cached != null) return cached;
+    return null;
+  }
+
+  Future<void> saveArtBytes({
+    required Uint8List bytes,
+    int? trackId,
+    String? artUrl,
+  }) async {
+    await init();
+    final key = _artKey(trackId: trackId, artUrl: artUrl);
+    if (key.isEmpty) return;
+    _artMem[key] = bytes;
+    final f = File(p.join(_artRoot!.path, '$key.jpg'));
+    await f.writeAsBytes(bytes, flush: true);
+    // Also mirror track id cache when both provided.
+    if (trackId != null && artUrl != null) {
+      final urlKey = _artKey(artUrl: artUrl);
+      if (urlKey.isNotEmpty && urlKey != key) {
+        _artMem[urlKey] = bytes;
+        await File(p.join(_artRoot!.path, '$urlKey.jpg')).writeAsBytes(bytes, flush: true);
       }
+    }
+  }
+
+  File? artFile(int trackId) => _artDiskFile(_artKey(trackId: trackId));
+
+  Future<int> _dirBytes(Directory? dir) async {
+    if (dir == null || !await dir.exists()) return 0;
+    var total = 0;
+    await for (final ent in dir.list(recursive: true)) {
+      if (ent is File) total += await ent.length();
     }
     return total;
   }
 
-  File? artFile(int trackId) {
-    if (_artRoot == null) return null;
-    final f = File(p.join(_artRoot!.path, '$trackId.jpg'));
-    return f.existsSync() ? f : null;
+  Future<int> offlineBytesUsed() async {
+    final b = await storageBreakdown(metadataBytes: 0);
+    return b.mediaBytes + b.thumbnailBytes;
   }
 
-  Future<void> saveArtBytes(int trackId, Uint8List bytes) async {
+  Future<StorageBreakdown> storageBreakdown({required int metadataBytes}) async {
     await init();
-    final f = File(p.join(_artRoot!.path, '$trackId.jpg'));
-    await f.writeAsBytes(bytes, flush: true);
+    return StorageBreakdown(
+      mediaBytes: await _dirBytes(_root),
+      thumbnailBytes: await _dirBytes(_artRoot),
+      metadataBytes: metadataBytes,
+    );
   }
 
   Future<String> saveDownloadStream({
@@ -172,8 +278,9 @@ class OfflineStore {
       final f = File(path);
       if (await f.exists()) await f.delete();
     }
-    final art = File(p.join(_artRoot?.path ?? '', '$trackId.jpg'));
-    if (await art.exists()) await art.delete();
+    final art = artFile(trackId);
+    if (art != null && await art.exists()) await art.delete();
+    _artMem.remove(_artKey(trackId: trackId));
   }
 
   Future<void> clearAllDownloads() async {

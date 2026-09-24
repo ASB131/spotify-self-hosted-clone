@@ -6,11 +6,13 @@ Native Android client for Mix player. Spotify-style mobile layout, streams when 
 
 - Sign in with your Mix player server URL + account (public HTTPS domain or LAN)
 - Optional “Trust server certificate” for self-hosted TLS quirks
-- Home, Search (Songs / Artists / YouTube), Library, Profile
-- Lock-screen and notification media controls
+- Home, Search (Songs / Artists / YouTube with MP3/FLAC), Library, Profile
+- Lock-screen and notification shade media controls (play/pause/skip/seek)
+- Offline mode: launch without server, browse downloads + playlists with downloads, auto-reconnect
 - Stream audio when online; download tracks for offline play
+- Persistent thumbnail cache on device
 - Swipe a song right to add it to the queue
-- Profile: server stats, offline storage, clear downloads, sign out
+- Profile: downloads list, storage breakdown (media / thumbnails / metadata), sign out
 - App icon uses the site favicon; launcher name is **Mix Player**
 
 ## Build (CI)

@@ -145,6 +145,7 @@ jobs:
               "android.permission.WAKE_LOCK",
               "android.permission.FOREGROUND_SERVICE",
               "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+              "android.permission.POST_NOTIFICATIONS",
           ]
           for perm in perms:
               needle = f'<uses-permission android:name="{perm}"/>'
@@ -167,10 +168,14 @@ jobs:
 
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle.kts || true
+            # permission_handler needs a recent compileSdk for POST_NOTIFICATIONS
+            sed -i 's/compileSdk = .*/compileSdk = 35/' android/app/build.gradle.kts || true
           fi
           if [ -f android/app/build.gradle ]; then
             sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
             sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
+            sed -i 's/compileSdk .*/compileSdk 35/' android/app/build.gradle || true
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle || true
           fi
 
       - name: Pub get

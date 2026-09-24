@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../theme.dart';
+import 'downloads_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -26,6 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final state = context.watch<AppState>();
     final profile = state.profile;
     final stats = state.stats;
+    final storage = state.storage;
 
     return RefreshIndicator(
       color: MixColors.green,
@@ -54,13 +56,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        profile?.displayName ?? 'Loading…',
+                        profile?.displayName ?? (state.offlineMode ? 'Offline' : 'Loading…'),
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                       ),
                       Text(
                         profile?.email ?? state.api.baseUrl,
                         style: const TextStyle(color: MixColors.muted, fontSize: 13),
                       ),
+                      if (state.offlineMode)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text('Offline mode — reconnecting…', style: TextStyle(color: MixColors.green, fontSize: 12)),
+                        ),
                     ],
                   ),
                 ),
@@ -81,8 +88,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 20),
           const Text('On this phone', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          _StatTile(label: 'Downloaded songs', value: '${state.offline.downloadedCount}'),
-          _StatTile(label: 'Offline storage used', value: formatBytes(state.offlineBytes)),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Downloads', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(
+              '${state.offline.downloadedCount} songs',
+              style: const TextStyle(color: MixColors.muted, fontSize: 13),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: MixColors.muted),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DownloadsScreen()),
+            ),
+          ),
+          _StatTile(label: 'Media (audio)', value: formatBytes(storage.mediaBytes)),
+          _StatTile(label: 'Thumbnails', value: formatBytes(storage.thumbnailBytes)),
+          _StatTile(label: 'Cached metadata', value: formatBytes(storage.metadataBytes)),
+          _StatTile(label: 'Total on device', value: formatBytes(storage.totalBytes)),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: state.offline.downloadedCount == 0
@@ -91,7 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     final ok = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Clear downloads?'),
+                        title: const Text('Clear all downloads?'),
                         content: const Text('Removes offline audio from this phone. Server library is unchanged.'),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -109,7 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     }
                   },
             icon: const Icon(Icons.delete_outline),
-            label: const Text('Clear downloads'),
+            label: const Text('Clear all downloads'),
             style: OutlinedButton.styleFrom(foregroundColor: MixColors.white),
           ),
           const SizedBox(height: 28),

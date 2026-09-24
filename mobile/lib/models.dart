@@ -162,15 +162,24 @@ class YoutubeResult {
   final int? durationSeconds;
   final String? thumbnailUrl;
 
-  factory YoutubeResult.fromJson(Map<String, dynamic> j) => YoutubeResult(
-        id: (j['id'] as String?) ?? '',
-        title: (j['title'] as String?) ?? 'Unknown',
-        artist: (j['artist'] as String?) ?? (j['channel'] as String?) ?? 'YouTube',
-        url: (j['url'] as String?) ?? '',
-        channel: (j['channel'] as String?) ?? '',
-        durationSeconds: j['duration_seconds'] as int?,
-        thumbnailUrl: j['thumbnail_url'] as String?,
-      );
+  factory YoutubeResult.fromJson(Map<String, dynamic> j) {
+    int? duration;
+    final rawDur = j['duration_seconds'];
+    if (rawDur is int) {
+      duration = rawDur;
+    } else if (rawDur is num) {
+      duration = rawDur.toInt();
+    }
+    return YoutubeResult(
+      id: '${j['id'] ?? ''}',
+      title: (j['title'] as String?) ?? 'Unknown',
+      artist: (j['artist'] as String?) ?? (j['channel'] as String?) ?? 'YouTube',
+      url: (j['url'] as String?) ?? '',
+      channel: (j['channel'] as String?) ?? '',
+      durationSeconds: duration,
+      thumbnailUrl: j['thumbnail_url'] as String?,
+    );
+  }
 }
 
 class ArtistHit {

@@ -355,12 +355,40 @@ class ApiClient {
     return tracks.map((e) => Track.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
+  /// Lightweight reachability check (no auth required).
+  Future<bool> ping() async {
+    if (_baseUrl.isEmpty) return false;
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/api/v1/auth/setup-status'),
+            headers: const {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode < 500) return true;
+    } catch (_) {}
+    try {
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/health'))
+          .timeout(const Duration(seconds: 5));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<List<YoutubeResult>> searchYoutube(String q, {int offset = 0}) async {
     final data = await _get(
       '/api/v1/youtube/search?q=${Uri.encodeQueryComponent(q)}&limit=12&offset=$offset&exclude_owned=true',
-    ) as Map<String, dynamic>;
-    final results = data['results'] as List? ?? const [];
-    return results.map((e) => YoutubeResult.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    );
+    if (data is! Map) {
+      throw ApiException('Unexpected YouTube search response');
+    }
+    final map = Map<String, dynamic>.from(data);
+    final results = map['results'] as List? ?? const [];
+    return results
+        .map((e) => YoutubeResult.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   Future<int> queueYoutubeDownload(YoutubeResult item, {String? format}) async {

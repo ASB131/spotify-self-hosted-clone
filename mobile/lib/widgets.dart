@@ -28,7 +28,7 @@ class TrackArt extends StatefulWidget {
 class _TrackArtState extends State<TrackArt> {
   Uint8List? _bytes;
   bool _loading = false;
-  String? _triedUrl;
+  String? _loadKey;
 
   @override
   void didChangeDependencies() {
@@ -41,7 +41,7 @@ class _TrackArtState extends State<TrackArt> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.artUrl != widget.artUrl || oldWidget.trackId != widget.trackId) {
       _bytes = null;
-      _triedUrl = null;
+      _loadKey = null;
       _maybeLoad();
     }
   }
@@ -49,27 +49,33 @@ class _TrackArtState extends State<TrackArt> {
   Future<void> _maybeLoad() async {
     final state = context.read<AppState>();
     final tid = widget.trackId;
-    if (tid != null) {
-      final local = state.offline.artFile(tid);
-      if (local != null) {
-        final bytes = await local.readAsBytes();
-        if (!mounted) return;
-        setState(() => _bytes = bytes);
-        return;
+    final url = widget.artUrl;
+    final key = '${tid ?? ''}|${url ?? ''}';
+
+    // Instant paint from memory/disk cache — no spinner flash.
+    final cached = state.offline.artBytesSync(trackId: tid, artUrl: url);
+    if (cached != null) {
+      if (_bytes != cached) {
+        setState(() {
+          _bytes = cached;
+          _loading = false;
+          _loadKey = key;
+        });
       }
+      return;
     }
 
-    final url = widget.artUrl;
     if (url == null || url.isEmpty) return;
-    if (_loading || _triedUrl == url) return;
+    if (_loading || _loadKey == key) return;
     _loading = true;
-    _triedUrl = url;
+    _loadKey = key;
+    if (mounted) setState(() {});
+
     final bytes = await state.api.fetchArtBytes(url);
     if (!mounted) return;
     if (bytes != null && bytes.isNotEmpty) {
-      if (tid != null) {
-        await state.offline.saveArtBytes(tid, bytes);
-      }
+      await state.offline.saveArtBytes(bytes: bytes, trackId: tid, artUrl: url);
+      if (!mounted) return;
       setState(() {
         _bytes = bytes;
         _loading = false;
@@ -102,6 +108,33 @@ class _TrackArtState extends State<TrackArt> {
   }
 }
 
+class FormatBadge extends StatelessWidget {
+  const FormatBadge({super.key, required this.format});
+  final String format;
+
+  @override
+  Widget build(BuildContext context) {
+    final flac = format.toLowerCase() == 'flac';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: flac ? MixColors.green.withOpacity(0.2) : Colors.white12,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: flac ? MixColors.green.withOpacity(0.5) : Colors.white24),
+      ),
+      child: Text(
+        format.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+          color: flac ? MixColors.green : MixColors.muted,
+        ),
+      ),
+    );
+  }
+}
+
 class TrackTile extends StatelessWidget {
   const TrackTile({
     super.key,
@@ -126,17 +159,24 @@ class TrackTile extends StatelessWidget {
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: TrackArt(artUrl: track.artUrl, trackId: track.id),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600, color: MixColors.white),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: MixColors.white),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FormatBadge(format: track.format),
+        ],
       ),
       subtitle: Text(
         [
           if (offline) 'Downloaded',
           track.artist,
-          track.formatLabel,
           if (subtitleExtra != null) subtitleExtra!,
         ].where((e) => e.isNotEmpty).join(' · '),
         maxLines: 1,
@@ -164,7 +204,7 @@ class TrackTile extends StatelessWidget {
             ),
           );
         }
-        return false; // keep row; just use swipe as an action
+        return false;
       },
       background: Container(
         alignment: Alignment.centerLeft,

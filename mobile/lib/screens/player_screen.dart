@@ -99,11 +99,19 @@ class NowPlayingScreen extends StatelessWidget {
             const Spacer(),
             Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                track.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      track.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FormatBadge(format: track.format),
+                ],
               ),
             ),
             const SizedBox(height: 6),

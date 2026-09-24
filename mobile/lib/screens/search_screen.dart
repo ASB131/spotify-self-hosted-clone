@@ -20,7 +20,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   List<ArtistHit> _artists = [];
   List<YoutubeResult> _youtube = [];
   bool _searching = false;
+  bool _ytSearching = false;
+  String? _ytError;
   String _query = '';
+  int _searchGen = 0;
 
   @override
   void initState() {
@@ -37,40 +40,54 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Future<void> _run(String q) async {
     final query = q.trim();
+    final gen = ++_searchGen;
     setState(() {
       _query = query;
       _searching = query.length >= 2;
-    });
-    if (query.length < 2) {
-      setState(() {
+      _ytError = null;
+      if (query.length < 2) {
         _songs = [];
         _artists = [];
         _youtube = [];
         _searching = false;
-      });
-      return;
-    }
+        _ytSearching = false;
+      }
+    });
+    if (query.length < 2) return;
 
     final state = context.read<AppState>();
-    final songs = await state.search(query);
-    final artists = state.artistsMatching(query);
-    if (!mounted) return;
+    final songsFuture = state.search(query);
+    final ytFuture = state.offlineMode
+        ? Future<List<YoutubeResult>>.value(const [])
+        : state.searchYoutube(query);
+
+    setState(() => _ytSearching = !state.offlineMode);
+
+    final songs = await songsFuture;
+    if (!mounted || gen != _searchGen) return;
     setState(() {
       _songs = songs;
-      _artists = artists;
+      _artists = state.artistsMatching(query);
     });
 
-    // YouTube can be slower — load after library results.
-    if (_tabs.index == 2 || _youtube.isEmpty) {
-      try {
-        final yt = await state.searchYoutube(query);
-        if (!mounted || _query != query) return;
-        setState(() => _youtube = yt);
-      } catch (_) {
-        if (mounted && _query == query) setState(() => _youtube = []);
-      }
+    try {
+      final yt = await ytFuture;
+      if (!mounted || gen != _searchGen) return;
+      setState(() {
+        _youtube = yt;
+        _ytError = state.offlineMode ? 'Connect to your server to search YouTube' : null;
+        _ytSearching = false;
+        _searching = false;
+      });
+    } catch (e) {
+      if (!mounted || gen != _searchGen) return;
+      setState(() {
+        _youtube = [];
+        _ytError = e.toString();
+        _ytSearching = false;
+        _searching = false;
+      });
     }
-    if (mounted && _query == query) setState(() => _searching = false);
   }
 
   @override
@@ -93,25 +110,25 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           indicatorColor: MixColors.green,
           labelColor: MixColors.white,
           unselectedLabelColor: MixColors.muted,
-          onTap: (_) {
-            if (_query.length >= 2 && _tabs.index == 2 && _youtube.isEmpty) {
-              _run(_query);
-            }
-          },
           tabs: const [
             Tab(text: 'Songs'),
             Tab(text: 'Artists'),
             Tab(text: 'YouTube'),
           ],
         ),
-        if (_searching) const LinearProgressIndicator(minHeight: 2, color: MixColors.green),
+        if (_searching || _ytSearching) const LinearProgressIndicator(minHeight: 2, color: MixColors.green),
         Expanded(
           child: TabBarView(
             controller: _tabs,
             children: [
               _SongsTab(songs: _songs, emptyHint: 'Search songs in your library'),
               _ArtistsTab(artists: _artists),
-              _YoutubeTab(results: _youtube, query: _query),
+              _YoutubeTab(
+                results: _youtube,
+                query: _query,
+                error: _ytError,
+                searching: _ytSearching,
+              ),
             ],
           ),
         ),
@@ -175,15 +192,33 @@ class _ArtistsTab extends StatelessWidget {
 }
 
 class _YoutubeTab extends StatelessWidget {
-  const _YoutubeTab({required this.results, required this.query});
+  const _YoutubeTab({
+    required this.results,
+    required this.query,
+    required this.error,
+    required this.searching,
+  });
   final List<YoutubeResult> results;
   final String query;
+  final String? error;
+  final bool searching;
 
   @override
   Widget build(BuildContext context) {
     if (query.length < 2) {
       return const Center(
         child: Text('Search YouTube to add songs to your server', style: TextStyle(color: MixColors.muted)),
+      );
+    }
+    if (searching && results.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: MixColors.green));
+    }
+    if (error != null && results.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: MixColors.muted)),
+        ),
       );
     }
     if (results.isEmpty) {
@@ -195,62 +230,130 @@ class _YoutubeTab extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 100),
       itemBuilder: (context, i) {
         final y = results[i];
-        final busy = state.youtubeQueueing.contains(y.id);
-        return ListTile(
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              width: 64,
-              height: 40,
-              child: y.thumbnailUrl == null
-                  ? Container(color: MixColors.card, child: const Icon(Icons.play_arrow, color: MixColors.muted))
-                  : Image.network(
-                      y.thumbnailUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: MixColors.card,
-                        child: const Icon(Icons.play_arrow, color: MixColors.muted),
-                      ),
-                    ),
-            ),
-          ),
-          title: Text(y.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text(
-            [
-              y.artist,
-              if (y.durationSeconds != null) formatDuration(y.durationSeconds),
-            ].join(' · '),
-            style: const TextStyle(color: MixColors.muted, fontSize: 13),
-          ),
-          trailing: busy
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: MixColors.green),
-                )
-              : IconButton(
-                  tooltip: 'Add to Mix player server',
-                  icon: const Icon(Icons.add_circle_outline, color: MixColors.green),
-                  onPressed: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Queuing ${y.title}…')),
-                    );
-                    try {
-                      await state.addYoutubeToServer(y);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Queued ${y.title} for download on the server')),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                      }
-                    }
-                  },
+        final busyMp3 = state.youtubeQueueing.contains('${y.id}:mp3') || state.youtubeQueueing.contains(y.id);
+        final busyFlac = state.youtubeQueueing.contains('${y.id}:flac');
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: 64,
+                  height: 40,
+                  child: y.thumbnailUrl == null
+                      ? Container(color: MixColors.card, child: const Icon(Icons.play_arrow, color: MixColors.muted))
+                      : Image.network(
+                          y.thumbnailUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: MixColors.card,
+                            child: const Icon(Icons.play_arrow, color: MixColors.muted),
+                          ),
+                        ),
                 ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      y.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      [
+                        y.artist,
+                        if (y.durationSeconds != null) formatDuration(y.durationSeconds),
+                      ].join(' · '),
+                      style: const TextStyle(color: MixColors.muted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _FormatDownloadChip(
+                          label: busyMp3 ? '…' : 'MP3',
+                          busy: busyMp3,
+                          onTap: busyMp3 || busyFlac
+                              ? null
+                              : () => _queue(context, state, y, 'mp3'),
+                        ),
+                        const SizedBox(width: 8),
+                        _FormatDownloadChip(
+                          label: busyFlac ? '…' : 'FLAC',
+                          busy: busyFlac,
+                          accent: true,
+                          onTap: busyMp3 || busyFlac
+                              ? null
+                              : () => _queue(context, state, y, 'flac'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  Future<void> _queue(BuildContext context, AppState state, YoutubeResult y, String format) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Queuing ${y.title} as ${format.toUpperCase()}…')),
+    );
+    try {
+      await state.addYoutubeToServer(y, format: format);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Queued ${y.title} (${format.toUpperCase()}) on the server')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+}
+
+class _FormatDownloadChip extends StatelessWidget {
+  const _FormatDownloadChip({
+    required this.label,
+    required this.onTap,
+    this.busy = false,
+    this.accent = false,
+  });
+  final String label;
+  final VoidCallback? onTap;
+  final bool busy;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: accent ? MixColors.green.withOpacity(0.2) : Colors.white12,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: accent ? MixColors.green : MixColors.white,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
